@@ -23,6 +23,12 @@ API keys, with a **signed, hash-chained receipt for every decision** that anyone
 | `GET /api/v1/usage` | plan and monthly usage |
 | `GET /api/v1/service-key` | the service's Ed25519 public key (no key needed) |
 
+Next to the decision, the result carries a **Graviteron**: how strongly the counted evidence supports the
+claim (`expected`) and how much evidence stands behind it (`uncertainty`), computed with
+[graviteron.evidence](https://github.com/gravit-open-network-foundation/graviteron) (vendored in
+`private/graviteron_evidence`). Every operator is trusted equally for now, so its calibration is
+not yet established; the decision itself is unchanged.
+
 The request body is passed to the verifier byte for byte, so signed numbers keep their exact form.
 The result in the response is the verifier's canonical JSON; `result_sha256` in the receipt covers it.
 
