@@ -4,6 +4,7 @@
 //   php admin.php key <account_public_id>                                                -> new API key
 //   php admin.php revoke <key_prefix>                                                   -> revoke keys with this prefix
 //   php admin.php list
+//   php admin.php delete <email>                                                        -> delete account, keys and history (GDPR)
 declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { exit(1); }
 require (getenv('GV_PRIVATE') ?: __DIR__) . '/lib.php';
@@ -18,6 +19,14 @@ if ($cmd === 'account') {
     echo gv_create_key((int)$id), "\n";
 } elseif ($cmd === 'revoke') {
     $st = gv_db()->prepare('UPDATE api_keys SET revoked = 1 WHERE prefix = ?'); $st->execute([$argv[2]]); echo $st->rowCount(), " key(s) revoked\n";
+} elseif ($cmd === 'delete') {
+    $db = gv_db(); $st = $db->prepare('SELECT id FROM accounts WHERE email = ?'); $st->execute([strtolower($argv[2] ?? '')]);
+    $n = 0;
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        foreach (['entries', 'api_keys'] as $t) { $db->prepare("DELETE FROM $t WHERE account_id = ?")->execute([$id]); }
+        $db->prepare('DELETE FROM accounts WHERE id = ?')->execute([$id]); $n++;
+    }
+    echo "$n account(s) deleted\n";
 } elseif ($cmd === 'list') {
     foreach (gv_db()->query('SELECT a.public_id, a.email, a.plan, a.partner, a.plan_until, a.created,
                 (SELECT COUNT(*) FROM entries e WHERE e.account_id = a.id) AS decisions FROM accounts a ORDER BY a.id') as $r) {
