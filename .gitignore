@@ -1,0 +1,5 @@
+private/data/service.sqlite*
+private/data/service.key
+.venv/
+__pycache__/
+node_modules/

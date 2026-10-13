@@ -1,0 +1,411 @@
+[
+ {
+  "canonical_reference": [
+   "VEDS-00 §4.2",
+   "GEVP-07 §9.3"
+  ],
+  "decision_outcome": {
+   "failure_states": [
+    "REJECTED",
+    "DEGRADED"
+   ],
+   "success": "no independent effect; caps state achieved by a state_gate"
+  },
+  "kind": "constraint",
+  "notes": "Reference implementation checks only for timestamp presence; a production Verifier Kernel should compare against a domain-specific Freshness Bound duration.\n",
+  "policy_obligation": {
+   "allowed_epistemic_states": [],
+   "description": "Any epistemic state above RAW requires each supporting Evidence Record to carry a timestamp within the applicable Freshness Bound. This Binding only demotes an already-achieved state when evidence is stale or missing a timestamp; it never grants a state on its own.\n"
+  },
+  "requirement_id": "CANON-FRS-005",
+  "status": "normative",
+  "title": "Freshness Bound must be satisfied for any elevated state",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "required_evidence": [
+    "timestamp within Freshness Bound"
+   ],
+   "required_verification_state": "VALIDATED"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "Gravit Canon v1.1",
+   "VEDS-00 §4.6.2",
+   "GEVP-07 §10.4"
+  ],
+  "decision_outcome": {
+   "failure_states": [
+    "REJECTED",
+    "DEGRADED"
+   ],
+   "success": "no independent effect beyond confirming CANON-NAL-001"
+  },
+  "kind": "constraint",
+  "notes": "Without independence, Convergence degenerates into collusion. Enforced as an explicit, separately auditable check, even though CANON-NAL-001's own GEVP evaluation already requires independent Records. Implementation: Records sharing a verifier-id or a provenance root, directly or through a chain of Records, are one source, represented by its lowest-theta Record.\n",
+  "policy_obligation": {
+   "additional_constraints": [
+    "Independent production required for Convergence"
+   ],
+   "allowed_epistemic_states": [],
+   "description": "To reach COMMITTED, Records must be independently produced (distinct verifier-id, distinct provenance roots, no shared control plane). This Binding is a constraint: it can only demote a Verified Fact that was granted without real independence, never grant a state on its own.\n"
+  },
+  "requirement_id": "CANON-IND-004",
+  "status": "normative",
+  "title": "Records must be independently produced",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "other_conditions": [
+    "No shared control-plane signature"
+   ],
+   "required_evidence": [
+    "distinct verifier-id",
+    "distinct provenance roots"
+   ],
+   "required_verification_state": "COMMITTED"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "Gravit Canon v1.1",
+   "VEDS-00 §4.1.2 (No Aggregation Laundering)",
+   "GEVP-07 §10.3",
+   "GEVP-07 §10.4"
+  ],
+  "decision_outcome": {
+   "decision_record_fields": [
+    "requirement_id",
+    "final_epistemic_state",
+    "convergence_metrics",
+    "evidence_ids",
+    "canon_trace"
+   ],
+   "failure_states": [
+    "REJECTED",
+    "DEGRADED",
+    "PENDING"
+   ],
+   "success": "Verified Fact"
+  },
+  "kind": "state_gate",
+  "notes": "Direct implementation of the invariant Aggregate(V1...Vn) does not imply VerifiedFact absent independent verification evidence satisfying COMMITTED. Critical barrier against epistemic elevation in decentralized multi-agent environments.\n",
+  "policy_obligation": {
+   "additional_constraints": [
+    "No Aggregation Laundering",
+    "Aggregate(V1...Vn) does not imply VerifiedFact without independent Convergence"
+   ],
+   "allowed_epistemic_states": [
+    "Verified Fact"
+   ],
+   "description": "Aggregation of any number of RAW, VALIDATED, or Speculative Claim items does not by itself produce a Verified Fact. Elevation to Verified Fact is permitted only when independent verification evidence satisfies the COMMITTED conditions.\n",
+   "forbidden_epistemic_states": [
+    "Speculative Claim",
+    "Probabilistic Assessment",
+    "VALIDATED",
+    "RAW"
+   ]
+  },
+  "requirement_id": "CANON-NAL-001",
+  "status": "normative",
+  "title": "No Aggregation Laundering — Verified Fact only via COMMITTED Convergence",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "convergence_condition": {
+    "f": "< 0.3",
+    "h": "> 0.7",
+    "independent_records": ">= 2 (per VEDS §4.6.2 criteria)"
+   },
+   "other_conditions": [
+    "Independence of Records must be verifiable"
+   ],
+   "required_evidence": [
+    "multiple independent Records",
+    "each Record contains theta and result",
+    "cryptographic integrity",
+    "provenance binding"
+   ],
+   "required_verification_state": "COMMITTED"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "Gravit Canon v1.1",
+   "VEDS-00 §5.1"
+  ],
+  "decision_outcome": {
+   "failure_states": [
+    "PENDING"
+   ],
+   "success": "DEGRADED or REJECTED when conditions later fail"
+  },
+  "kind": "constraint",
+  "notes": "This reference Verifier Kernel is stateless per call and therefore reports this Binding as informative only (see ConstraintEvaluator). A stateful deployment must track prior DecisionRecords per artifact_id and actively re-run verify() on a schedule or on evidence expiry, emitting an explicit DEGRADED/REJECTED transition rather than doing nothing.\n",
+  "policy_obligation": {
+   "allowed_epistemic_states": [],
+   "description": "If evidence no longer satisfies the conditions of a previously assigned epistemic state, the system must explicitly transition the artifact to DEGRADED or REJECTED rather than silently retaining the old state. This is a process invariant about re-verification over time, not a single-request check.\n"
+  },
+  "requirement_id": "CANON-NSD-007",
+  "status": "normative",
+  "title": "Silent degradation of epistemic state is forbidden",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "required_verification_state": "VALIDATED"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "VEDS-00 §4.3",
+   "GEVP-07 §8.2"
+  ],
+  "decision_outcome": {
+   "failure_states": [
+    "REJECTED",
+    "DEGRADED"
+   ],
+   "success": "no independent effect; caps state achieved by a state_gate"
+  },
+  "kind": "constraint",
+  "notes": "Applicability is context-scoped (context.high_impact), not universal — ordinary low-impact artifacts are not held to this stricter bar.\n",
+  "policy_obligation": {
+   "allowed_epistemic_states": [],
+   "description": "For high-impact decisions (safety, critical infrastructure), provenance must be cryptographically bound and resolvable. Applies only when VerificationRequest.context[\"high_impact\"] is true; otherwise this Binding is a no-op. It can only demote an already-achieved state.\n"
+  },
+  "requirement_id": "CANON-PRV-006",
+  "status": "normative",
+  "title": "High-impact decisions require strong provenance",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "required_evidence": [
+    "cryptographic provenance binding",
+    "resolvable origin"
+   ],
+   "required_verification_state": "VERIFIED"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "Gravit Canon v1.1",
+   "VEDS-00 §4.6.2",
+   "docs/signed-result.md"
+  ],
+  "decision_outcome": {
+   "failure_states": [
+    "DEGRADED"
+   ],
+   "success": "no independent effect beyond confirming CANON-NAL-001"
+  },
+  "kind": "constraint",
+  "notes": "Up to v0.5.0 the kernel ignored `result`: records reporting false or null counted towards a Verified Fact exactly like records reporting true. Reported by an external reviewer (12 Oct 2026) with a reproduction against the SAFR adapter. Caps instead of stepping down, like CANON-SIG-011, so the two do not stack. Only admissible records count when a registry is loaded, so an unsigned or unregistered \"false\" cannot block a decision.\n",
+  "policy_obligation": {
+   "additional_constraints": [
+    "result=false from a counted record blocks Verified Fact",
+    "result=null is not support"
+   ],
+   "allowed_epistemic_states": [],
+   "description": "The `result` field of an Evidence Record is the producer's verdict on the asserted claim, bound into its signature: true = the producer's check supports the claim, false = the check contradicts it, null = the check gave no verdict. A Verified Fact requires at least 2 independent sources whose records report result=true, and no counted record that reports result=false. Records with result=null support nothing and contradict nothing. Otherwise the state is capped at Probabilistic Assessment, and the record ids of contradicting and verdict-less records are kept in the decision.\n"
+  },
+  "requirement_id": "CANON-RES-012",
+  "status": "normative",
+  "title": "The signed result must support the claim",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "other_conditions": [
+    "Counted records: the admissible records when a verifier registry is loaded, otherwise all records",
+    "At least 2 independent sources with result=true"
+   ],
+   "required_evidence": [
+    "result in {true, false, null}, covered by the record's signature"
+   ],
+   "required_verification_state": "COMMITTED"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "Gravit Canon v1.1",
+   "VEDS-00 §4.6.2",
+   "docs/sybil-design.md"
+  ],
+  "decision_outcome": {
+   "failure_states": [
+    "DEGRADED"
+   ],
+   "success": "no independent effect beyond confirming CANON-NAL-001"
+  },
+  "kind": "constraint",
+  "notes": "Caps the state at Probabilistic Assessment instead of stepping it down, so a Record set that already failed CANON-IND-004 is not demoted twice. Protects against self-declared identities; does not protect against collusion of registered operators or a dishonest registry (see docs/sybil-design.md §7). IDs 008-010 are reserved by other drafts.\n",
+  "policy_obligation": {
+   "additional_constraints": [
+    "Registry required for Verified Fact",
+    "Independence counted per registry operator"
+   ],
+   "allowed_epistemic_states": [],
+   "description": "A Verified Fact must converge on Records that are signed by keys listed in the verifier registry, not revoked, and whose signatures verify. Records of keys with the same operator, or with the same provenance root, count as one source. Records that fail these checks are not counted and are listed with a reason; they never reject the artifact. Without a registry, the state is capped at Probabilistic Assessment.\n"
+  },
+  "requirement_id": "CANON-SIG-011",
+  "status": "normative",
+  "title": "Evidence must be signed by a registered key",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "other_conditions": [
+    "At least 2 independent operators after exclusion"
+   ],
+   "required_evidence": [
+    "Ed25519 signature by a registered, non-revoked key",
+    "artifact_id bound into the signed message"
+   ],
+   "required_verification_state": "COMMITTED"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "Gravit Canon v1.1",
+   "VEDS-00 §4.1.1",
+   "VEDS-00 §4.2",
+   "GEVP-07 §10.1"
+  ],
+  "decision_outcome": {
+   "decision_record_fields": [
+    "requirement_id",
+    "final_epistemic_state",
+    "admissibility_checks",
+    "evidence_ids",
+    "canon_trace"
+   ],
+   "failure_states": [
+    "REJECTED",
+    "PENDING"
+   ],
+   "success": "Speculative Claim"
+  },
+  "kind": "state_gate",
+  "notes": "Admissibility is not Truth. Critical barrier against epistemic elevation.\n",
+  "policy_obligation": {
+   "additional_constraints": [
+    "Admissibility is not Truth",
+    "No elevation from VALIDATED without additional independent Records"
+   ],
+   "allowed_epistemic_states": [
+    "Speculative Claim"
+   ],
+   "description": "An artifact that has only passed admissibility checks (provenance, integrity, freshness, interpretability) but has not received independent confirmation of accuracy may be classified no higher than Speculative Claim.\n",
+   "forbidden_epistemic_states": [
+    "Probabilistic Assessment",
+    "Verified Fact"
+   ]
+  },
+  "requirement_id": "CANON-VAL-002",
+  "status": "normative",
+  "title": "VALIDATED Artifact may be classified at most as Speculative Claim",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "other_conditions": [
+    "Forbidden transition: VALIDATED -> VERIFIED or COMMITTED without additional Records"
+   ],
+   "required_evidence": [
+    "Provenance resolves to identifiable origin",
+    "SHA3-256 integrity check",
+    "Freshness Bound satisfied",
+    "Schema / interpretability check"
+   ],
+   "required_verification_state": "VALIDATED",
+   "transition_from": "RAW"
+  },
+  "version": "1.0"
+ },
+ {
+  "canonical_reference": [
+   "Gravit Canon v1.1",
+   "VEDS-00 §4.1.1",
+   "GEVP-07 §10.2"
+  ],
+  "decision_outcome": {
+   "decision_record_fields": [
+    "requirement_id",
+    "final_epistemic_state",
+    "theta",
+    "evidence_ids",
+    "canon_trace"
+   ],
+   "failure_states": [
+    "REJECTED",
+    "DEGRADED",
+    "PENDING"
+   ],
+   "success": "Probabilistic Assessment"
+  },
+  "kind": "state_gate",
+  "notes": "A single Record is never sufficient for Verified Fact.\n",
+  "policy_obligation": {
+   "additional_constraints": [
+    "Single Record does not imply Verified Fact"
+   ],
+   "allowed_epistemic_states": [
+    "Probabilistic Assessment"
+   ],
+   "description": "A single Record, even with high theta, can justify at most a Probabilistic Assessment. A Verified Fact from a single Record is forbidden.\n",
+   "forbidden_epistemic_states": [
+    "Verified Fact"
+   ]
+  },
+  "requirement_id": "CANON-VER-003",
+  "status": "normative",
+  "title": "Single Record yields at most Probabilistic Assessment",
+  "traceability": {
+   "audit_level": "full",
+   "must_link_to_canon": true,
+   "must_link_to_evidence": true
+  },
+  "verification_condition": {
+   "other_conditions": [
+    "recommended_theta >= 0.73 for high-impact decisions"
+   ],
+   "required_evidence": [
+    "theta",
+    "result",
+    "verifier-id",
+    "timestamp"
+   ],
+   "required_verification_state": "VERIFIED"
+  },
+  "version": "1.0"
+ }
+]

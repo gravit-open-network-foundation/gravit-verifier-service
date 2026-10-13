@@ -1,0 +1,16 @@
+[project]
+name = "gravit-verifier-client"
+version = "0.1.0"
+description = "Client for the hosted Gravit Verifier API, with offline verification of signed receipts and exports"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = ["cryptography>=42"]
+
+[project.urls]
+Homepage = "https://gravitverifier.space"
+Source = "https://github.com/gravit-open-network-foundation/verifier"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
