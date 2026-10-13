@@ -14,10 +14,12 @@ for name in ["committed_two_strong", "result_false_contradicts", "two_keys_one_o
     res = gv.verify(art, use_test_registry=v["use_registry"])
     got = res["result"]["decision"]
     assert got == v["expected"], f"{name}: decision differs from the golden vector"
+    g = res["result"]["graviteron"]
+    assert 0.0 <= g["expected"] <= 1.0 and 0.0 <= g["uncertainty"] <= 1.0 and "calibration" in g
     chk = verify_response(res, kd, art)
     assert chk["ok"], (name, chk)
     ok += 1
-    print(f"{name:32} {got['final_epistemic_state']:26} {got['status']:9} receipt ok")
+    print(f"{name:32} {got['final_epistemic_state']:26} {got['status']:9} G={g['expected']:.3f} u={g['uncertainty']:.3f} receipt ok")
 # tampering is detected
 res2 = copy.deepcopy(res); res2["result"]["decision"]["final_epistemic_state"] = "Verified Fact"
 assert not verify_response(res2, kd)["ok"]

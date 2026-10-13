@@ -16,7 +16,10 @@ from pathlib import Path
 import gravit_verifier
 from gravit_verifier.explain import explain
 from gravit_verifier.kernel import EpistemicState, EvidenceRecord, VerificationRequest, VerifierKernel
-from gravit_verifier.registry import RegistryError, TrustRoot, VerifierRegistry
+from gravit_verifier.registry import RegistryError, TrustRoot, VerifierRegistry, screen_evidence
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from graviteron_evidence import VERSION as GRAVITERON_VERSION, graviteron  # noqa: E402
 
 DATA = Path(__file__).resolve().parent / "data"
 FIELDS = ("record_id", "theta", "result", "verifier_id", "timestamp", "provenance", "integrity_hash")
@@ -57,6 +60,27 @@ def request_from(a):
     return VerificationRequest(a["artifact_id"], state, records, context)
 
 
+def graviteron_block(req, registry):
+    """Graviteron next to the decision: how strongly the counted evidence supports the claim.
+
+    Counted records are the admissible ones (signed, registered, not revoked) when a registry is
+    used, grouped by registry operator; otherwise all records, grouped by verifier_id. Every
+    operator is trusted equally: the service has no measured reliability per operator yet, so the
+    calibration of this number is not established (see the Graviteron benchmark).
+    """
+    if registry is not None:
+        admissible, _ = screen_evidence(registry, req.artifact_id, req.evidence)
+        pairs = [(op, e.result) for e, op in admissible]
+    else:
+        pairs = [(e.verifier_id, e.result) for e in req.evidence]
+    pairs = [(op, r) for op, r in pairs if r is True or r is False or r is None]
+    g = graviteron(pairs)
+    return {"expected": round(g.expected, 6), "uncertainty": round(g.u, 6), "belief": round(g.b, 6),
+            "disbelief": round(g.d, 6), "operators": len({op for op, _ in pairs}),
+            "method": f"graviteron {GRAVITERON_VERSION}, equal trust per operator",
+            "calibration": "not established: operator reliability is not yet measured for this service"}
+
+
 def main():
     try:
         job = json.load(sys.stdin)
@@ -81,7 +105,8 @@ def main():
         d = kernel.verify(req)
     except Exception as e:  # malformed field types inside records
         fail(f"artifact could not be evaluated: {type(e).__name__}: {e}")
-    result = canon({"decision": d.to_dict(), "explanation": explain(req, d, kernel)})
+    result = canon({"decision": d.to_dict(), "explanation": explain(req, d, kernel),
+                    "graviteron": graviteron_block(req, registry)})
     meta = {"ok": True, "request_sha256": hashlib.sha256(canon(job.get("artifact")).encode()).hexdigest(),
             "decision_id": d.decision_id, "artifact_id": d.artifact_id, "status": d.status.value,
             "state": d.final_epistemic_state.value if d.final_epistemic_state else None,
