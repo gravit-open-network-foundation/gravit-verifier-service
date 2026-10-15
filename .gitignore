@@ -3,3 +3,4 @@ private/data/service.key
 .venv/
 __pycache__/
 node_modules/
+private/data/btcpay.json

@@ -2,7 +2,7 @@
  "openapi": "3.1.0",
  "info": {
   "title": "Gravit Verifier hosted API",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Open-source Gravit Verifier behind API keys. Every decision and every gate evaluation gets a signed, hash-chained receipt that anyone can check offline with the SDK. Specification: IETF draft-gravit-gevp. Test registry keys only unless you bring your own registry.",
   "license": {
    "name": "Apache-2.0"
@@ -400,6 +400,70 @@
      },
      "503": {
       "description": "no head published yet"
+     }
+    }
+   }
+  },
+  "/v1/plans": {
+   "get": {
+    "summary": "Plans and prices (USD per 30 days, no VAT)",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "plans, payment method, open"
+     }
+    }
+   }
+  },
+  "/v1/billing/checkout": {
+   "post": {
+    "summary": "Create a Bitcoin invoice (BTCPay) for a paid plan",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "plan": {
+          "type": "string",
+          "enum": [
+           "pro",
+           "enterprise"
+          ]
+         },
+         "months": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "invoice_id, checkout_url, amount_usd"
+     },
+     "400": {
+      "description": "bad plan or months"
+     },
+     "503": {
+      "description": "payments not open yet"
+     }
+    }
+   }
+  },
+  "/v1/billing/webhook": {
+   "post": {
+    "summary": "BTCPay webhook (HMAC signed); extends the plan when an invoice is settled",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "status"
+     },
+     "400": {
+      "description": "rejected"
      }
     }
    }
