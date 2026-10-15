@@ -39,4 +39,20 @@ try:
     Client("gv_" + "0" * 48, base).usage(); raise SystemExit("expected 401")
 except ApiError as e:
     assert e.status == 401
+# capability gate: frontier needs a verified fact bound to the action
+pol = {"revision": "t1", "allowed": ["read"], "frontier": ["pay"], "forbidden": ["wipe"]}
+assert gv.gate("read", pol, action={"q": 1})["result"]["gate"]["permitted"]
+assert not gv.gate("browse", pol, action={"q": 1})["result"]["gate"]["permitted"]
+g0 = gv.gate("pay", pol, action={"to": "x", "amount": 5})["result"]["gate"]
+assert g0["state"] == "FRONTIER" and not g0["permitted"]
+v = vectors["committed_two_strong"]
+art = {"artifact_id": g0["action_hash"], "claimed_state": v["claimed_state"], "context": v["context"], "evidence": v["evidence"]}
+vr = gv.verify(art, use_test_registry=v["use_registry"])
+if vr["result"]["decision"]["final_epistemic_state"] == "Verified Fact":
+    g1 = gv.gate("pay", pol, action={"to": "x", "amount": 5}, decision_id=vr["receipt"]["decision_id"])
+    assert g1["result"]["gate"]["permitted"] and verify_response(g1, kd)["ok"]
+    g2 = gv.gate("pay", pol, action={"to": "x", "amount": 6}, decision_id=vr["receipt"]["decision_id"])
+    assert not g2["result"]["gate"]["permitted"]
+    print("gate: frontier permitted only with a verified fact for the same action; receipt ok")
+assert gv.status()["status"] == "ok"
 print(f"ALL OK ({ok} decisions match the golden vectors)")

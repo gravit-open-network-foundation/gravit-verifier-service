@@ -20,6 +20,9 @@ from gravit_verifier.registry import RegistryError, TrustRoot, VerifierRegistry,
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from graviteron_evidence import VERSION as GRAVITERON_VERSION, graviteron  # noqa: E402
+import capability_gate as cg  # noqa: E402
+
+GATE_VERSION = "capability-gate 0.1.0"
 
 DATA = Path(__file__).resolve().parent / "data"
 FIELDS = ("record_id", "theta", "result", "verifier_id", "timestamp", "provenance", "integrity_hash")
@@ -81,11 +84,69 @@ def graviteron_block(req, registry):
             "calibration": "not established: operator reliability is not yet measured for this service"}
 
 
+def status():
+    sys.stdout.write(canon({"ok": True, "verifier_version": gravit_verifier.__version__,
+                            "graviteron": GRAVITERON_VERSION, "capability_gate": GATE_VERSION}) + "\n")
+
+
+def gate(job):
+    """Capability Gate for one action. job: {"gate": {"capability", "action" | "action_hash", "policy",
+    "overrides"}, "decision": optional {"artifact_id", "decision_id", "state", "status"} from this account}.
+    A decision settles a frontier capability only if its artifact_id equals the action hash."""
+    g = job.get("gate") or {}
+    if not isinstance(g, dict) or not isinstance(g.get("capability"), str) or not isinstance(g.get("policy"), dict):
+        fail('body must be {"capability": str, "action": {...} or "action_hash": str, "policy": {...}}')
+    if isinstance(g.get("action_hash"), str):
+        h = g["action_hash"]
+    elif isinstance(g.get("action"), dict):
+        h = cg.sha3(g["action"])
+    else:
+        fail("action or action_hash is required")
+    d = job.get("decision")
+    decision = None
+    if d:
+        verified = d.get("state") == "Verified Fact" and d.get("status") == "SUCCESS"
+        decision = {"action_hash": d.get("artifact_id"), "decision_id": d.get("decision_id"),
+                    "state": d.get("state"), "verdict": True if verified else None}
+    try:
+        rec = cg.evaluate(g["capability"], h, g["policy"], decision, g.get("overrides") or ())
+    except (cg.PolicyError, KeyError, TypeError, ValueError) as e:
+        fail(f"policy not accepted: {e}")
+    result = canon({"gate": rec})
+    meta = {"ok": True, "request_sha256": hashlib.sha256(canon(g).encode()).hexdigest(),
+            "decision_id": rec["record_id"][:16], "artifact_id": h, "status": "PERMITTED" if rec["permitted"] else "BLOCKED",
+            "state": rec["state"], "verifier_version": GATE_VERSION}
+    sys.stdout.write(canon(meta) + "\n" + result + "\n")
+
+
+def log_proof(q):
+    """Inclusion proof of one receipt in the published receipt log (tree of the latest head)."""
+    import sqlite3
+    from history_keeper import merkle
+    size = int(q["tree_size"])
+    con = sqlite3.connect(f"file:{DATA / 'service.sqlite'}?mode=ro", uri=True)
+    rows = [r[0] for r in con.execute("SELECT entry_hash FROM entries ORDER BY rowid LIMIT ?", (size,))]
+    con.close()
+    if q["entry_hash"] not in rows:
+        fail("this receipt is not yet in the latest published tree head; it will be in the next one")
+    i = rows.index(q["entry_hash"])
+    leaves = [bytes.fromhex(h) for h in rows]
+    sys.stdout.write(canon({"ok": True, "entry_hash": q["entry_hash"], "leaf_index": i, "tree_size": size,
+                            "root": merkle.root(leaves).hex(),
+                            "proof": [p.hex() for p in merkle.inclusion_proof(leaves, i)]}) + "\n")
+
+
 def main():
     try:
         job = json.load(sys.stdin)
     except ValueError:
         fail("request body is not valid JSON")
+    if job.get("status") is True:
+        return status()
+    if "gate" in job:
+        return gate(job)
+    if "log_proof" in job:
+        return log_proof(job["log_proof"])
     registry = None
     try:
         if job.get("registry"):

@@ -25,6 +25,11 @@ export class Client {
   verify(artifact, { registry, useTestRegistry = true } = {}) {
     return this.call("POST", "/verify", { artifact, use_test_registry: useTestRegistry, ...(registry ? { registry } : {}) });
   }
+  gate(capability, policy, { action, actionHash, decisionId, overrides } = {}) {
+    return this.call("POST", "/gate", { capability, policy, ...(action ? { action } : {}), ...(actionHash ? { action_hash: actionHash } : {}),
+      ...(decisionId ? { decision_id: decisionId } : {}), ...(overrides ? { overrides } : {}) });
+  }
+  status() { return fetch(this.base + "/status").then(r => r.json()); }
   decisions(limit = 50) { return this.call("GET", `/decisions?limit=${limit}`).then(d => d.decisions); }
   decision(id) { return this.call("GET", `/decisions/${id}`); }
   export(fromSeq = 1) { return this.call("GET", `/export?from_seq=${fromSeq}`); }
