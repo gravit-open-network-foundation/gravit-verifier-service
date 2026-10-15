@@ -5,6 +5,7 @@
 declare(strict_types=1);
 
 const GV_PRICES_USD = ['pro' => 7, 'enterprise' => 150];   // per 30 days
+const GV_BILLING_FROM = 'billing@gravitverifier.space';
 
 function gv_btcpay(): ?array {
     $f = gv_dir() . '/data/btcpay.json';
@@ -70,6 +71,37 @@ function gv_webhook(string $raw, string $sigHeader): string {
         $db->prepare('UPDATE accounts SET plan = ?, plan_until = ? WHERE id = ?')->execute([$p['plan'], $until, $p['account_id']]);
         $db->prepare('UPDATE payments SET settled = ? WHERE invoice_id = ?')->execute([gv_now(), $inv['id']]);
         $db->commit();
+        $em = $db->prepare('SELECT email, public_id FROM accounts WHERE id = ?'); $em->execute([$p['account_id']]); $a = $em->fetch();
+        if ($a && filter_var($a['email'], FILTER_VALIDATE_EMAIL)) { gv_billing_mail($a['email'], $a['public_id'], $p, $until, $inv['id']); }
+        gv_billing_mail(GV_BILLING_FROM, $a['public_id'] ?? '?', $p, $until, $inv['id'], true);
         return "applied until $until";
     } catch (Throwable $e) { $db->rollBack(); throw $e; }
+}
+
+function gv_billing_mail(string $to, string $account, array $p, string $until, string $invoice, bool $internal = false): void {
+    $plan = ucfirst((string)$p['plan']); $months = (int)$p['months']; $usd = (int)$p['amount_usd']; $day = substr($until, 0, 10);
+    $subject = $internal ? "Payment settled: $plan, $usd USD ($account)" : "Payment received: Gravit Verifier $plan until $day";
+    $body = $internal ? "Invoice $invoice settled. Account $account: $plan for $months x 30 days, $usd USD, valid until $until.\n" : <<<TXT
+Hello,
+
+thank you. Your payment of $usd USD in Bitcoin has been confirmed.
+
+Account: $account
+Plan: $plan, $months x 30 days
+Valid until: $until (UTC)
+Invoice: $invoice
+
+Your API key stays the same. Check your plan at any time with GET https://gravitverifier.space/api/v1/usage
+
+No VAT is charged: the Gravit Open Network Foundation is not VAT registered. If you need an invoice
+document for your accounting, simply reply to this email.
+
+Questions? Reply to this email. A person reads every message.
+
+Gravit Open Network Foundation, Zurich
+https://gravitverifier.space
+TXT;
+    $headers = "From: Gravit Verifier Billing <" . GV_BILLING_FROM . ">\r\nReply-To: " . GV_BILLING_FROM .
+               "\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit";
+    @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers, '-f' . GV_BILLING_FROM);
 }
