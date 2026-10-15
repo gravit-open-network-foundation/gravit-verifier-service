@@ -51,6 +51,13 @@ when at least two agree). Heads are public at `https://gravitverifier.space/log/
 would show it. Merkle tree and anchors are vendored from
 [History Keeper](https://github.com/gravit-open-network-foundation/history-keeper).
 
+## Erasure (GDPR)
+
+`php admin.php delete <email>` erases what identifies a person: the email, the API keys and the stored
+results. The receipts stay: they are leaves of the public log and hold no personal data (account id,
+hashes, states). Their signatures still verify; `result_sha256` then refers to a result that was erased.
+Remove the address from the waitlist file as well.
+
 ## Capability Gate
 
 `/v1/gate` answers one question for an AI agent: may this capability be used for this exact action?
