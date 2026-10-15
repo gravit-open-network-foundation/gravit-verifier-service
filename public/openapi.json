@@ -1,0 +1,417 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Gravit Verifier hosted API",
+  "version": "1.1.0",
+  "description": "Open-source Gravit Verifier behind API keys. Every decision and every gate evaluation gets a signed, hash-chained receipt that anyone can check offline with the SDK. Specification: IETF draft-gravit-gevp. Test registry keys only unless you bring your own registry.",
+  "license": {
+   "name": "Apache-2.0"
+  },
+  "contact": {
+   "url": "https://gravitverifier.space/docs/"
+  }
+ },
+ "servers": [
+  {
+   "url": "https://gravitverifier.space/api"
+  }
+ ],
+ "security": [
+  {
+   "bearer": []
+  }
+ ],
+ "paths": {
+  "/v1/verify": {
+   "post": {
+    "summary": "Decide one artifact",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "artifact"
+        ],
+        "properties": {
+         "artifact": {
+          "type": "object",
+          "description": "artifact_id, claimed_state, context, evidence[] as in the verifier README"
+         },
+         "use_test_registry": {
+          "type": "boolean",
+          "default": true
+         },
+         "registry": {
+          "type": "object",
+          "properties": {
+           "registry": {
+            "type": "string"
+           },
+           "signatures": {
+            "type": "string"
+           },
+           "trust_root": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "result {decision, explanation, graviteron}, receipt, signature, entry_hash",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Signed"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "missing or invalid key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "413": {
+      "description": "body over 1 MiB",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "artifact rejected",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "monthly limit reached",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/gate": {
+   "post": {
+    "summary": "Capability Gate: may this capability be used for this exact action?",
+    "description": "Fail-closed. allowed, frontier and forbidden must be disjoint; anything unlisted is UNKNOWN and blocked. A frontier capability is permitted only when decision_id refers to a decision in your account whose artifact_id equals the action hash and whose result is Verified Fact with status SUCCESS. Overrides by at least override_quorum distinct authorities lift UNSAFE to FRONTIER only. Spec: https://github.com/gravit-open-network-foundation/capability-gate",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "capability",
+         "policy"
+        ],
+        "properties": {
+         "capability": {
+          "type": "string"
+         },
+         "action": {
+          "type": "object",
+          "description": "the action; its SHA3-256 over canonical JSON is the action hash"
+         },
+         "action_hash": {
+          "type": "string",
+          "description": "instead of action"
+         },
+         "policy": {
+          "type": "object",
+          "required": [
+           "revision",
+           "allowed",
+           "frontier",
+           "forbidden"
+          ],
+          "properties": {
+           "revision": {
+            "type": "string"
+           },
+           "allowed": {
+            "type": "array",
+            "items": {
+             "type": "string"
+            }
+           },
+           "frontier": {
+            "type": "array",
+            "items": {
+             "type": "string"
+            }
+           },
+           "forbidden": {
+            "type": "array",
+            "items": {
+             "type": "string"
+            }
+           },
+           "override_quorum": {
+            "type": "integer",
+            "minimum": 2,
+            "default": 2
+           }
+          }
+         },
+         "decision_id": {
+          "type": "string",
+          "description": "a decision from /v1/verify in your account"
+         },
+         "overrides": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "authority": {
+             "type": "string"
+            },
+            "action_hash": {
+             "type": "string"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "result {gate: {state SAFE|FRONTIER|UNSAFE|UNKNOWN, permitted, reason, record_id}}, receipt, signature, entry_hash",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Signed"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "decision_id not found in your account",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "policy not accepted",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "monthly limit reached",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/decisions": {
+   "get": {
+    "summary": "Your history",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "maximum": 200
+      }
+     },
+     {
+      "name": "before_seq",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "decisions[]"
+     }
+    }
+   }
+  },
+  "/v1/decisions/{decision_id}": {
+   "get": {
+    "summary": "One decision with its receipt",
+    "parameters": [
+     {
+      "name": "decision_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "as /v1/verify",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Signed"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/v1/export": {
+   "get": {
+    "summary": "All receipts, signed and hash-chained, for your auditor",
+    "parameters": [
+     {
+      "name": "from_seq",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "format gravit-verifier-export-1"
+     }
+    }
+   }
+  },
+  "/v1/usage": {
+   "get": {
+    "summary": "Plan and monthly usage",
+    "responses": {
+     "200": {
+      "description": "plan, month, used, limit"
+     }
+    }
+   }
+  },
+  "/v1/service-key": {
+   "get": {
+    "summary": "The service Ed25519 public key",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "key document"
+     }
+    }
+   }
+  },
+  "/v1/status": {
+   "get": {
+    "summary": "Health and component versions",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "status ok"
+     },
+     "503": {
+      "description": "degraded"
+     }
+    }
+   }
+  },
+  "/v1/openapi.json": {
+   "get": {
+    "summary": "This document",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "OpenAPI 3.1"
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "securitySchemes": {
+   "bearer": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "API key gv_..."
+   }
+  },
+  "schemas": {
+   "Error": {
+    "type": "object",
+    "properties": {
+     "error": {
+      "type": "string"
+     }
+    }
+   },
+   "Signed": {
+    "type": "object",
+    "properties": {
+     "result": {
+      "type": "object"
+     },
+     "receipt": {
+      "type": "object",
+      "description": "format gravit-verifier-receipt-1; verifier_version names the component (verifier or capability-gate)"
+     },
+     "signature": {
+      "type": "string",
+      "description": "Ed25519 over the canonical receipt, base64"
+     },
+     "entry_hash": {
+      "type": "string"
+     }
+    }
+   }
+  }
+ }
+}

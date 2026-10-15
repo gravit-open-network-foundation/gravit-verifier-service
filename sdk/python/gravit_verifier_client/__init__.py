@@ -57,6 +57,25 @@ class Client:
             body["registry"] = registry
         return self._call("POST", "/verify", body)
 
+    def gate(self, capability, policy, action=None, action_hash=None, decision_id=None, overrides=None):
+        """Capability Gate: may `capability` be used for this exact action? Fail-closed; only state SAFE permits.
+        A frontier capability needs decision_id of a Verified Fact whose artifact_id equals the action hash."""
+        body = {"capability": capability, "policy": policy}
+        if action is not None:
+            body["action"] = action
+        if action_hash is not None:
+            body["action_hash"] = action_hash
+        if decision_id is not None:
+            body["decision_id"] = decision_id
+        if overrides:
+            body["overrides"] = overrides
+        return self._call("POST", "/gate", body)
+
+    def status(self):
+        req = urllib.request.Request(self.base + "/status")
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            return json.loads(r.read().decode())
+
     def decisions(self, limit=50, before_seq=None):
         q = f"?limit={int(limit)}" + (f"&before_seq={int(before_seq)}" if before_seq else "")
         return self._call("GET", "/decisions" + q)["decisions"]
