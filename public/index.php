@@ -27,6 +27,20 @@ if ($path === '/v1/status' && $method === 'GET') {
               'verifier_version' => $meta['verifier_version'] ?? null, 'graviteron' => $meta['graviteron'] ?? null,
               'capability_gate' => $meta['capability_gate'] ?? null]);
 }
+if ($path === '/v1/billing/webhook' && $method === 'POST') {
+    require_once gv_dir() . '/billing.php';
+    $raw = (string)file_get_contents('php://input', false, null, 0, 65536);
+    try { out(200, ['status' => gv_webhook($raw, $_SERVER['HTTP_BTCPAY_SIG'] ?? '')]); }
+    catch (Throwable $e) { error_log('gravit webhook: ' . $e->getMessage()); err(400, 'webhook rejected'); }
+}
+if ($path === '/v1/plans' && $method === 'GET') {
+    require_once gv_dir() . '/billing.php';
+    out(200, ['currency' => 'USD', 'vat' => 'not charged: the Foundation is not VAT registered', 'period_days' => 30,
+              'plans' => ['free' => ['price' => 0, 'calls_per_month' => GV_PLANS['free']],
+                          'pro' => ['price' => GV_PRICES_USD['pro'], 'calls_per_month' => GV_PLANS['pro']],
+                          'enterprise' => ['price' => GV_PRICES_USD['enterprise'], 'calls_per_month' => GV_PLANS['enterprise']]],
+              'payment' => 'Bitcoin (on chain and Lightning) through BTCPay Server', 'open' => gv_btcpay() !== null]);
+}
 if ($path === '/v1' || $path === '/') { out(200, ['service' => GV_SERVICE, 'api' => 'v1', 'docs' => 'https://gravitverifier.space/docs/']); }
 
 $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
@@ -87,6 +101,15 @@ if (preg_match('#^/v1/log/proof/([0-9a-f]{64})$#', $path, $m) && $method === 'GE
     unset($meta['ok']);
     out(200, ['proof' => $meta, 'head' => $latest['head'], 'head_signature' => $latest['signature'],
               'time' => $latest['time'], 'head_url' => 'https://gravitverifier.space/log/heads/' . $latest['head']['tree_size'] . '.json']);
+}
+
+if ($path === '/v1/billing/checkout' && $method === 'POST') {
+    require_once gv_dir() . '/billing.php';
+    $b = json_decode((string)file_get_contents('php://input', false, null, 0, 4096), true) ?: [];
+    try { out(200, gv_checkout($acct, (string)($b['plan'] ?? 'pro'), (int)($b['months'] ?? 1))); }
+    catch (DomainException $e) { err(503, $e->getMessage()); }
+    catch (InvalidArgumentException $e) { err(400, $e->getMessage()); }
+    catch (Throwable $e) { error_log('gravit checkout: ' . $e->getMessage()); err(502, 'the payment service did not answer; please try again'); }
 }
 
 if ($path === '/v1/usage' && $method === 'GET') { out(200, gv_usage($acct)); }
