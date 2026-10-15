@@ -1,7 +1,6 @@
 name: Publish SDKs
 # Push a tag sdk-vX.Y.Z (matching both package versions) to publish to PyPI and npm.
-# PyPI: Trusted Publishing (OIDC), no stored token. npm: Trusted Publishing once the package exists;
-# the very first npm release uses the NPM_TOKEN secret if it is set.
+# Both registries use Trusted Publishing (OIDC): no stored tokens.
 on:
   push:
     tags: ["sdk-v*"]
@@ -35,5 +34,3 @@ jobs:
         run: test "$(node -p "require('./sdk/typescript/package.json').version")" = "${GITHUB_REF_NAME#sdk-v}"
       - run: npm publish --access public --provenance
         working-directory: sdk/typescript
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

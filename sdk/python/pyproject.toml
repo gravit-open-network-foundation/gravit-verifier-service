@@ -1,6 +1,6 @@
 [project]
 name = "gravit-verifier-client"
-version = "0.2.1"
+version = "0.2.2"
 description = "Client for the hosted Gravit Verifier API, with offline verification of signed receipts and exports"
 readme = "README.md"
 requires-python = ">=3.9"
