@@ -22,7 +22,9 @@ export declare class Client {
   export(fromSeq?: number): Promise<Record<string, any>>;
   gate(capability: string, policy: { revision: string; allowed: string[]; frontier: string[]; forbidden: string[]; override_quorum?: number },
        opts?: { action?: Record<string, unknown>; actionHash?: string; decisionId?: string; overrides?: Array<{ authority: string; action_hash: string }> }): Promise<VerifyResponse>;
+  logProof(entryHash: string): Promise<{ proof: { entry_hash: string; leaf_index: number; tree_size: number; root: string; proof: string[] }; head: Record<string, any>; head_signature: string; time: Record<string, any>; head_url: string }>;
   status(): Promise<{ status: string; verifier_version: string; capability_gate: string; graviteron: string }>;
   usage(): Promise<{ plan: string; plan_until: string | null; month: string; used: number; limit: number }>;
   serviceKey(): Promise<{ key_id: string; public_key: string; algorithm: string }>;
 }
+export declare function verifyLogInclusion(resp: { proof: Record<string, any>; head: Record<string, any> }): Promise<boolean>;
