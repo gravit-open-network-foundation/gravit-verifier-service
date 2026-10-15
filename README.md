@@ -9,7 +9,7 @@ API keys, with a **signed, hash-chained receipt for every decision** that anyone
 | `public/` | PHP router, served at `/api/v1/` |
 | `private/` | outside the web root: `lib.php` (keys, plans, receipts), `worker.py` (runs the verifier), `admin.php`, `data/` |
 | `sdk/python` | `gravit-verifier-client`: API calls plus offline `verify_response` and `verify_export` |
-| `sdk/typescript` | `@gravit/verifier-client`: API calls |
+| `sdk/typescript` | `@gravit-open-network/verifier-client`: API calls |
 | `tests/test_api.py` | end-to-end test: decisions equal the verifier's golden vectors byte for byte, receipts and export verify, tampering is detected |
 
 ## API v1

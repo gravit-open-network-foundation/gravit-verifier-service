@@ -9,7 +9,8 @@ dependencies = ["cryptography>=42"]
 
 [project.urls]
 Homepage = "https://gravitverifier.space"
-Source = "https://github.com/gravit-open-network-foundation/verifier"
+Source = "https://github.com/gravit-open-network-foundation/gravit-verifier-service"
+Verifier = "https://github.com/gravit-open-network-foundation/verifier"
 
 [build-system]
 requires = ["setuptools>=68"]
