@@ -75,6 +75,20 @@ if ($path === '/v1/gate' && $method === 'POST') {
     exit;
 }
 
+if (preg_match('#^/v1/log/proof/([0-9a-f]{64})$#', $path, $m) && $method === 'GET') {
+    $own = gv_db()->prepare('SELECT 1 FROM entries WHERE account_id = ? AND entry_hash = ?');
+    $own->execute([$acct['id'], $m[1]]);
+    if (!$own->fetchColumn()) { err(404, 'no receipt with this entry_hash in your account'); }
+    $latest = json_decode((string)@file_get_contents(__DIR__ . '/../log/latest.json'), true);
+    if (!isset($latest['head']['tree_size'])) { err(503, 'no tree head published yet'); }
+    try { [$meta] = gv_run_worker(json_encode(['log_proof' => ['entry_hash' => $m[1], 'tree_size' => $latest['head']['tree_size']]])); }
+    catch (Throwable $e) { err(500, 'proof could not be computed'); }
+    if (empty($meta['ok'])) { err(409, $meta['error'] ?? 'not yet published'); }
+    unset($meta['ok']);
+    out(200, ['proof' => $meta, 'head' => $latest['head'], 'head_signature' => $latest['signature'],
+              'time' => $latest['time'], 'head_url' => 'https://gravitverifier.space/log/heads/' . $latest['head']['tree_size'] . '.json']);
+}
+
 if ($path === '/v1/usage' && $method === 'GET') { out(200, gv_usage($acct)); }
 
 if ($path === '/v1/decisions' && $method === 'GET') {

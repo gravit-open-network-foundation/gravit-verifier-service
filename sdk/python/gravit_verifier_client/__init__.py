@@ -76,6 +76,11 @@ class Client:
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             return json.loads(r.read().decode())
 
+    def log_proof(self, entry_hash):
+        """Inclusion proof of one of your receipts in the public receipt log, with the signed,
+        independently timestamped tree head. Check it offline with verify_log_proof()."""
+        return self._call("GET", f"/log/proof/{entry_hash}")
+
     def decisions(self, limit=50, before_seq=None):
         q = f"?limit={int(limit)}" + (f"&before_seq={int(before_seq)}" if before_seq else "")
         return self._call("GET", "/decisions" + q)["decisions"]
@@ -145,3 +150,41 @@ def verify_export(export, key_doc=None):
             problems.append("first entry does not start the chain")
         prev = (rc["seq"], hashlib.sha256(canonical(rc).encode()).hexdigest())
     return {"ok": not problems, "entries": len(export["entries"]), "head": prev[1] if prev else None, "problems": problems}
+
+
+
+def _node(a, b):
+    return hashlib.sha256(b"\x01" + a + b).digest()
+
+
+def _root_from_proof(leaf, index, size, proof):
+    """RFC 9162 section 2.1.3.2. Leaves of the receipt log are the receipts' entry hashes."""
+    if not 0 <= index < size:
+        return None
+    fn, sn, r = index, size - 1, leaf
+    for p in proof:
+        if sn == 0:
+            return None
+        if fn % 2 == 1 or fn == sn:
+            r = _node(p, r)
+            if fn % 2 == 0:
+                while fn % 2 == 0 and fn != 0:
+                    fn >>= 1
+                    sn >>= 1
+        else:
+            r = _node(r, p)
+        fn >>= 1
+        sn >>= 1
+    return r if sn == 0 else None
+
+
+def verify_log_proof(resp, key_doc):
+    """Check that a receipt is in the public log: head signed by the service key, proof recomputes
+    the head's root. The RFC 3161 tokens at head_url can be checked with History Keeper."""
+    head, pr = resp["head"], resp["proof"]
+    sig_err = _check_signature(head, resp["head_signature"], key_doc)
+    root = _root_from_proof(bytes.fromhex(pr["entry_hash"]), pr["leaf_index"], pr["tree_size"],
+                            [bytes.fromhex(x) for x in pr["proof"]])
+    inc_ok = root is not None and root.hex() == head["root"] and pr["tree_size"] == head["tree_size"]
+    return {"ok": sig_err is None and inc_ok, "head_signature": sig_err or "ok", "inclusion": inc_ok,
+            "time": resp.get("time", {}).get("state")}

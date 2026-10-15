@@ -24,6 +24,7 @@ API keys, with a **signed, hash-chained receipt for every decision** that anyone
 | `GET /api/v1/service-key` | the service's Ed25519 public key (no key needed) |
 | `POST /api/v1/gate` | Capability Gate: `{capability, action or action_hash, policy, decision_id?, overrides?}` → fail-closed state `SAFE / FRONTIER / UNSAFE / UNKNOWN` with a receipt in the same chain |
 | `GET /api/v1/status` | health and component versions (no key needed) |
+| `GET /api/v1/log/proof/{entry_hash}` | inclusion proof of your receipt in the public receipt log, with the signed tree head; check offline with `verify_log_proof` |
 | `GET /api/v1/openapi.json` | OpenAPI 3.1 description of this API (no key needed) |
 
 Next to the decision, the result carries a **Graviteron**: how strongly the counted evidence supports the
@@ -39,6 +40,16 @@ The result in the response is the verifier's canonical JSON; `result_sha256` in 
 
 Early service (October 2026). Plans and prices are planned, not yet sold. The bundled registry and trust root
 are **test keys** from the verifier's test suite; bring your own registry for real use.
+
+## Public receipt log
+
+Once a day `private/publish_log.py` builds an RFC 9162 Merkle tree over the entry hashes of **all**
+receipts of all accounts, signs the tree head with the service key and has it timestamped by three
+independent RFC 3161 authorities (DigiCert, Sectigo, GlobalSign; the time counts as a Verified Fact
+when at least two agree). Heads are public at `https://gravitverifier.space/log/latest.json` and
+`/log/heads/<size>.json`. So we cannot quietly remove or change a receipt we issued: every later head
+would show it. Merkle tree and anchors are vendored from
+[History Keeper](https://github.com/gravit-open-network-foundation/history-keeper).
 
 ## Capability Gate
 

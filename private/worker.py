@@ -119,6 +119,23 @@ def gate(job):
     sys.stdout.write(canon(meta) + "\n" + result + "\n")
 
 
+def log_proof(q):
+    """Inclusion proof of one receipt in the published receipt log (tree of the latest head)."""
+    import sqlite3
+    from history_keeper import merkle
+    size = int(q["tree_size"])
+    con = sqlite3.connect(f"file:{DATA / 'service.sqlite'}?mode=ro", uri=True)
+    rows = [r[0] for r in con.execute("SELECT entry_hash FROM entries ORDER BY rowid LIMIT ?", (size,))]
+    con.close()
+    if q["entry_hash"] not in rows:
+        fail("this receipt is not yet in the latest published tree head; it will be in the next one")
+    i = rows.index(q["entry_hash"])
+    leaves = [bytes.fromhex(h) for h in rows]
+    sys.stdout.write(canon({"ok": True, "entry_hash": q["entry_hash"], "leaf_index": i, "tree_size": size,
+                            "root": merkle.root(leaves).hex(),
+                            "proof": [p.hex() for p in merkle.inclusion_proof(leaves, i)]}) + "\n")
+
+
 def main():
     try:
         job = json.load(sys.stdin)
@@ -128,6 +145,8 @@ def main():
         return status()
     if "gate" in job:
         return gate(job)
+    if "log_proof" in job:
+        return log_proof(job["log_proof"])
     registry = None
     try:
         if job.get("registry"):

@@ -374,6 +374,35 @@
      }
     }
    }
+  },
+  "/v1/log/proof/{entry_hash}": {
+   "get": {
+    "summary": "Inclusion proof of your receipt in the public receipt log",
+    "parameters": [
+     {
+      "name": "entry_hash",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "proof {leaf_index, tree_size, root, proof[]}, head, head_signature, time, head_url"
+     },
+     "404": {
+      "description": "not your receipt"
+     },
+     "409": {
+      "description": "not yet in the latest published head"
+     },
+     "503": {
+      "description": "no head published yet"
+     }
+    }
+   }
   }
  },
  "components": {
