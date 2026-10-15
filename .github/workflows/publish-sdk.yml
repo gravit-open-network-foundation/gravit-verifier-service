@@ -1,0 +1,39 @@
+name: Publish SDKs
+# Push a tag sdk-vX.Y.Z (matching both package versions) to publish to PyPI and npm.
+# PyPI: Trusted Publishing (OIDC), no stored token. npm: Trusted Publishing once the package exists;
+# the very first npm release uses the NPM_TOKEN secret if it is set.
+on:
+  push:
+    tags: ["sdk-v*"]
+permissions:
+  contents: read
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Check version matches tag
+        run: grep -q "version = \"${GITHUB_REF_NAME#sdk-v}\"" sdk/python/pyproject.toml
+      - run: pip install build && python -m build sdk/python --outdir dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+  npm:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22", registry-url: "https://registry.npmjs.org"}
+      - run: npm install -g npm@latest
+      - name: Check version matches tag
+        run: test "$(node -p "require('./sdk/typescript/package.json').version")" = "${GITHUB_REF_NAME#sdk-v}"
+      - run: npm publish --access public --provenance
+        working-directory: sdk/typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
