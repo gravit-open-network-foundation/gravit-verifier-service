@@ -35,10 +35,11 @@ if ($path === '/v1/billing/webhook' && $method === 'POST') {
 }
 if ($path === '/v1/plans' && $method === 'GET') {
     require_once gv_dir() . '/billing.php';
-    out(200, ['currency' => 'USD', 'vat' => 'not charged: the Foundation is not VAT registered', 'period_days' => 30,
+    out(200, ['currency' => GV_CURRENCY, 'vat' => 'not charged: the Foundation, a Swiss association, is not VAT registered', 'period_days' => 30,
               'plans' => ['free' => ['price' => 0, 'calls_per_month' => GV_PLANS['free']],
-                          'pro' => ['price' => GV_PRICES_USD['pro'], 'calls_per_month' => GV_PLANS['pro']],
-                          'enterprise' => ['price' => GV_PRICES_USD['enterprise'], 'calls_per_month' => GV_PLANS['enterprise']]],
+                          'pro' => ['price' => GV_PRICES['pro'], 'calls_per_month' => GV_PLANS['pro']],
+                          'enterprise' => ['price' => GV_PRICES['enterprise'], 'calls_per_month' => GV_PLANS['enterprise']]],
+              'money_back' => 'full refund within 30 days of payment, in Bitcoin, no questions asked',
               'payment' => 'Bitcoin (on chain and Lightning) through BTCPay Server', 'open' => gv_btcpay() !== null]);
 }
 if ($path === '/v1' || $path === '/') { out(200, ['service' => GV_SERVICE, 'api' => 'v1', 'docs' => 'https://gravitverifier.space/docs/']); }
