@@ -93,6 +93,9 @@ Invoice: $invoice
 
 Your API key stays the same. Check your plan at any time with GET https://gravitverifier.space/api/v1/usage
 
+Money-back guarantee: if the plan is not right for you, reply to this email within 30 days of payment.
+We refund the full amount, in Bitcoin to an address you give us. No questions asked.
+
 No VAT is charged: the Gravit Open Network Foundation is not VAT registered. If you need an invoice
 document for your accounting, simply reply to this email.
 
