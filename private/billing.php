@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 const GV_CURRENCY = 'CHF';
 const GV_PRICES = ['pro' => 7, 'enterprise' => 150];   // CHF per 30 days
+const GV_PRICES_YEAR = ['pro' => 60, 'enterprise' => 1440];   // CHF per year (365 days), launch price for the first year
 const GV_BILLING_FROM = 'billing@gravitverifier.space';
 
 function gv_btcpay(): ?array {
@@ -42,11 +43,11 @@ function gv_checkout(array $acct, string $plan, int $months): array {
     $c = gv_btcpay();
     if (!$c) { throw new DomainException('payments are not open yet'); }
     if (!isset(GV_PRICES[$plan]) || $months < 1 || $months > 12) { throw new InvalidArgumentException('plan must be pro or enterprise, months 1 to 12'); }
-    $amount = GV_PRICES[$plan] * $months;
+    $amount = $months === 12 ? GV_PRICES_YEAR[$plan] : GV_PRICES[$plan] * $months;   // 12 months = one year at the annual price
     $inv = gv_btcpay_call($c, 'POST', '/invoices', [
         'amount' => (string)$amount, 'currency' => GV_CURRENCY,
         'metadata' => ['orderId' => $acct['public_id'] . '-' . gmdate('YmdHis'), 'account' => $acct['public_id'], 'plan' => $plan,
-                       'months' => $months, 'itemDesc' => "Gravit Verifier $plan, $months x 30 days"],
+                       'months' => $months, 'itemDesc' => $months === 12 ? "Gravit Verifier $plan, 1 year" : "Gravit Verifier $plan, $months x 30 days"],
         'checkout' => ['redirectURL' => 'https://gravitverifier.space/docs/?paid=1', 'redirectAutomatically' => true]]);
     gv_payments_table();
     gv_db()->prepare('INSERT INTO payments (invoice_id, account_id, plan, months, amount, currency, created) VALUES (?,?,?,?,?,?,?)')
@@ -75,7 +76,8 @@ function gv_webhook(string $raw, string $sigHeader): string {
         if (!$p) { $db->commit(); return 'already applied or unknown'; }
         if ((float)$inv['amount'] < (float)$p['amount'] || ($inv['currency'] ?? '') !== $p['currency']) { throw new RuntimeException('amount mismatch'); }
         $from = ($p['plan_until'] && $p['plan_until'] > gv_now() && $p['cur_plan'] === $p['plan']) ? strtotime($p['plan_until']) : time();
-        $until = gmdate('Y-m-d\TH:i:s\Z', $from + 30 * 86400 * (int)$p['months']);
+        $days = (int)$p['months'] === 12 ? 365 : 30 * (int)$p['months'];
+        $until = gmdate('Y-m-d\TH:i:s\Z', $from + $days * 86400);
         $db->prepare('UPDATE accounts SET plan = ?, plan_until = ? WHERE id = ?')->execute([$p['plan'], $until, $p['account_id']]);
         $db->prepare('UPDATE payments SET settled = ? WHERE invoice_id = ?')->execute([gv_now(), $inv['id']]);
         $db->commit();
@@ -89,14 +91,15 @@ function gv_webhook(string $raw, string $sigHeader): string {
 function gv_billing_mail(string $to, string $account, array $p, string $until, string $invoice, bool $internal = false): void {
     $plan = ucfirst((string)$p['plan']); $months = (int)$p['months']; $day = substr($until, 0, 10);
     $price = ($p['currency'] ?? GV_CURRENCY) . ' ' . (int)$p['amount'];
+    $term = $months === 12 ? '1 year' : "$months x 30 days";
     $subject = $internal ? "Payment settled: $plan, $price ($account)" : "Payment received: Gravit Verifier $plan until $day";
-    $body = $internal ? "Invoice $invoice settled. Account $account: $plan for $months x 30 days, $price, valid until $until.\n" : <<<TXT
+    $body = $internal ? "Invoice $invoice settled. Account $account: $plan for $term, $price, valid until $until.\n" : <<<TXT
 Hello,
 
 thank you. Your payment of $price in Bitcoin has been confirmed.
 
 Account: $account
-Plan: $plan, $months x 30 days
+Plan: $plan, $term
 Valid until: $until (UTC)
 Invoice: $invoice
 
