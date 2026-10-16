@@ -37,8 +37,9 @@ if ($path === '/v1/plans' && $method === 'GET') {
     require_once gv_dir() . '/billing.php';
     out(200, ['currency' => GV_CURRENCY, 'vat' => 'not charged: the Foundation, a Swiss association, is not VAT registered', 'period_days' => 30,
               'plans' => ['free' => ['price' => 0, 'calls_per_month' => GV_PLANS['free']],
-                          'pro' => ['price' => GV_PRICES['pro'], 'calls_per_month' => GV_PLANS['pro']],
-                          'enterprise' => ['price' => GV_PRICES['enterprise'], 'calls_per_month' => GV_PLANS['enterprise']]],
+                          'pro' => ['price' => GV_PRICES['pro'], 'price_year' => GV_PRICES_YEAR['pro'], 'calls_per_month' => GV_PLANS['pro']],
+                          'enterprise' => ['price' => GV_PRICES['enterprise'], 'price_year' => GV_PRICES_YEAR['enterprise'], 'calls_per_month' => GV_PLANS['enterprise']]],
+              'year' => 'months = 12 buys one year (365 days) at price_year, the launch price for the first year',
               'money_back' => 'full refund within 30 days of payment, in Bitcoin, no questions asked',
               'payment' => 'Bitcoin (on chain and Lightning) through BTCPay Server', 'open' => gv_btcpay() !== null]);
 }
