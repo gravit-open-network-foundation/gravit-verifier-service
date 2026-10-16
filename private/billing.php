@@ -1,10 +1,11 @@
 <?php
-// Payments through BTCPay Server (Greenfield API). Prices are in USD, without VAT: the Foundation is not
-// VAT registered. Configuration: private/data/btcpay.json {"url", "store_id", "api_key", "webhook_secret"};
+// Payments through BTCPay Server (Greenfield API). Prices are in Swiss francs (CHF), without VAT: the Foundation
+// is a Swiss association and not VAT registered. Configuration: private/data/btcpay.json {"url", "store_id", "api_key", "webhook_secret"};
 // the API key needs only btcpay.store.cancreateinvoice and btcpay.store.canviewinvoices (it cannot move funds).
 declare(strict_types=1);
 
-const GV_PRICES_USD = ['pro' => 7, 'enterprise' => 150];   // per 30 days
+const GV_CURRENCY = 'CHF';
+const GV_PRICES = ['pro' => 7, 'enterprise' => 150];   // CHF per 30 days
 const GV_BILLING_FROM = 'billing@gravitverifier.space';
 
 function gv_btcpay(): ?array {
@@ -25,25 +26,32 @@ function gv_btcpay_call(array $c, string $method, string $path, ?array $body = n
 }
 
 function gv_payments_table(): void {
-    gv_db()->exec('CREATE TABLE IF NOT EXISTS payments (invoice_id TEXT PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id),
-                   plan TEXT NOT NULL, months INTEGER NOT NULL, amount_usd INTEGER NOT NULL, created TEXT NOT NULL, settled TEXT)');
+    $db = gv_db();
+    $db->exec('CREATE TABLE IF NOT EXISTS payments (invoice_id TEXT PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id),
+                   plan TEXT NOT NULL, months INTEGER NOT NULL, amount INTEGER NOT NULL, currency TEXT NOT NULL DEFAULT \'CHF\',
+                   created TEXT NOT NULL, settled TEXT)');
+    $cols = array_column($db->query('PRAGMA table_info(payments)')->fetchAll(), 'name');
+    if (in_array('amount_usd', $cols, true)) {            // first version stored USD amounts; keep them, labelled USD
+        $db->exec('ALTER TABLE payments RENAME COLUMN amount_usd TO amount');
+        $db->exec("ALTER TABLE payments ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'");
+    }
 }
 
-/** Create an invoice for $months of $plan. Returns ['invoice_id', 'checkout_url', 'amount_usd']. */
+/** Create an invoice for $months of $plan. Returns ['invoice_id', 'checkout_url', 'amount', 'currency']. */
 function gv_checkout(array $acct, string $plan, int $months): array {
     $c = gv_btcpay();
     if (!$c) { throw new DomainException('payments are not open yet'); }
-    if (!isset(GV_PRICES_USD[$plan]) || $months < 1 || $months > 12) { throw new InvalidArgumentException('plan must be pro or enterprise, months 1 to 12'); }
-    $amount = GV_PRICES_USD[$plan] * $months;
+    if (!isset(GV_PRICES[$plan]) || $months < 1 || $months > 12) { throw new InvalidArgumentException('plan must be pro or enterprise, months 1 to 12'); }
+    $amount = GV_PRICES[$plan] * $months;
     $inv = gv_btcpay_call($c, 'POST', '/invoices', [
-        'amount' => (string)$amount, 'currency' => 'USD',
+        'amount' => (string)$amount, 'currency' => GV_CURRENCY,
         'metadata' => ['orderId' => $acct['public_id'] . '-' . gmdate('YmdHis'), 'account' => $acct['public_id'], 'plan' => $plan,
                        'months' => $months, 'itemDesc' => "Gravit Verifier $plan, $months x 30 days"],
         'checkout' => ['redirectURL' => 'https://gravitverifier.space/docs/?paid=1', 'redirectAutomatically' => true]]);
     gv_payments_table();
-    gv_db()->prepare('INSERT INTO payments (invoice_id, account_id, plan, months, amount_usd, created) VALUES (?,?,?,?,?,?)')
-        ->execute([$inv['id'], $acct['id'], $plan, $months, $amount, gv_now()]);
-    return ['invoice_id' => $inv['id'], 'checkout_url' => $inv['checkoutLink'], 'amount_usd' => $amount];
+    gv_db()->prepare('INSERT INTO payments (invoice_id, account_id, plan, months, amount, currency, created) VALUES (?,?,?,?,?,?,?)')
+        ->execute([$inv['id'], $acct['id'], $plan, $months, $amount, GV_CURRENCY, gv_now()]);
+    return ['invoice_id' => $inv['id'], 'checkout_url' => $inv['checkoutLink'], 'amount' => $amount, 'currency' => GV_CURRENCY];
 }
 
 /** BTCPay webhook. Verifies the HMAC, then re-reads the invoice from BTCPay (the webhook body is never
@@ -65,7 +73,7 @@ function gv_webhook(string $raw, string $sigHeader): string {
         $st->execute([$inv['id']]);
         $p = $st->fetch();
         if (!$p) { $db->commit(); return 'already applied or unknown'; }
-        if ((float)$inv['amount'] < (float)$p['amount_usd'] || ($inv['currency'] ?? '') !== 'USD') { throw new RuntimeException('amount mismatch'); }
+        if ((float)$inv['amount'] < (float)$p['amount'] || ($inv['currency'] ?? '') !== $p['currency']) { throw new RuntimeException('amount mismatch'); }
         $from = ($p['plan_until'] && $p['plan_until'] > gv_now() && $p['cur_plan'] === $p['plan']) ? strtotime($p['plan_until']) : time();
         $until = gmdate('Y-m-d\TH:i:s\Z', $from + 30 * 86400 * (int)$p['months']);
         $db->prepare('UPDATE accounts SET plan = ?, plan_until = ? WHERE id = ?')->execute([$p['plan'], $until, $p['account_id']]);
@@ -79,12 +87,13 @@ function gv_webhook(string $raw, string $sigHeader): string {
 }
 
 function gv_billing_mail(string $to, string $account, array $p, string $until, string $invoice, bool $internal = false): void {
-    $plan = ucfirst((string)$p['plan']); $months = (int)$p['months']; $usd = (int)$p['amount_usd']; $day = substr($until, 0, 10);
-    $subject = $internal ? "Payment settled: $plan, $usd USD ($account)" : "Payment received: Gravit Verifier $plan until $day";
-    $body = $internal ? "Invoice $invoice settled. Account $account: $plan for $months x 30 days, $usd USD, valid until $until.\n" : <<<TXT
+    $plan = ucfirst((string)$p['plan']); $months = (int)$p['months']; $day = substr($until, 0, 10);
+    $price = ($p['currency'] ?? GV_CURRENCY) . ' ' . (int)$p['amount'];
+    $subject = $internal ? "Payment settled: $plan, $price ($account)" : "Payment received: Gravit Verifier $plan until $day";
+    $body = $internal ? "Invoice $invoice settled. Account $account: $plan for $months x 30 days, $price, valid until $until.\n" : <<<TXT
 Hello,
 
-thank you. Your payment of $usd USD in Bitcoin has been confirmed.
+thank you. Your payment of $price in Bitcoin has been confirmed.
 
 Account: $account
 Plan: $plan, $months x 30 days
@@ -96,7 +105,7 @@ Your API key stays the same. Check your plan at any time with GET https://gravit
 Money-back guarantee: if the plan is not right for you, reply to this email within 30 days of payment.
 We refund the full amount, in Bitcoin to an address you give us. No questions asked.
 
-No VAT is charged: the Gravit Open Network Foundation is not VAT registered. If you need an invoice
+No VAT is charged: the Gravit Open Network Foundation, a Swiss association, is not VAT registered. If you need an invoice
 document for your accounting, simply reply to this email.
 
 Questions? Reply to this email. A person reads every message.

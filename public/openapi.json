@@ -406,7 +406,7 @@
   },
   "/v1/plans": {
    "get": {
-    "summary": "Plans and prices (USD per 30 days, no VAT)",
+    "summary": "Plans and prices (CHF per 30 days, no VAT)",
     "security": [],
     "responses": {
      "200": {
@@ -443,7 +443,7 @@
     },
     "responses": {
      "200": {
-      "description": "invoice_id, checkout_url, amount_usd"
+      "description": "invoice_id, checkout_url, amount, currency (CHF)"
      },
      "400": {
       "description": "bad plan or months"
