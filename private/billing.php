@@ -5,8 +5,8 @@
 declare(strict_types=1);
 
 const GV_CURRENCY = 'CHF';
-const GV_PRICES = ['pro' => 7, 'team' => 150];   // CHF per 30 days
-const GV_PRICES_YEAR = ['pro' => 84, 'team' => 1800];   // CHF per year (365 days) = 12 x the monthly price
+const GV_PRICES = ['pro' => 7, 'enterprise' => 150];   // CHF per 30 days
+const GV_PRICES_YEAR = ['pro' => 60, 'enterprise' => 1440];   // CHF per year (365 days), launch price for the first year
 const GV_BILLING_FROM = 'billing@gravitverifier.space';
 
 function gv_btcpay(): ?array {
@@ -28,7 +28,7 @@ function gv_btcpay_call(array $c, string $method, string $path, ?array $body = n
 
 /** Price in CHF for $months of $plan; 12 months = one year (365 days) at the annual price. */
 function gv_price(string $plan, int $months): int {
-    if (!isset(GV_PRICES[$plan]) || $months < 1 || $months > 12) { throw new InvalidArgumentException('plan must be pro or team, months 1 to 12'); }
+    if (!isset(GV_PRICES[$plan]) || $months < 1 || $months > 12) { throw new InvalidArgumentException('plan must be pro or enterprise, months 1 to 12'); }
     return $months === 12 ? GV_PRICES_YEAR[$plan] : GV_PRICES[$plan] * $months;
 }
 

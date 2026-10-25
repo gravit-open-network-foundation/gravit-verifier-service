@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 const GV_SERVICE = 'gravitverifier.space';
-const GV_PLANS = ['free' => 1000, 'pro' => 100000, 'team' => 1000000, 'enterprise' => 10000000];   // verifications per calendar month (UTC); enterprise by agreement
+const GV_PLANS = ['free' => 1000, 'pro' => 100000, 'enterprise' => 10000000];   // verifications per calendar month (UTC)
 const GV_MAX_BODY = 1048576;                                                   // 1 MiB
 
 function gv_dir(): string { return getenv('GV_PRIVATE') ?: __DIR__; }
