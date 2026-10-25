@@ -1,12 +1,12 @@
 <?php
-// Payments through BTCPay Server (Greenfield API). Prices are in Swiss francs (CHF), without VAT: the Foundation
-// is a Swiss association and not VAT registered. Configuration: private/data/btcpay.json {"url", "store_id", "api_key", "webhook_secret"};
+// Payments through BTCPay Server (Greenfield API) and in stablecoins (stablecoin.php). Prices are in Swiss francs (CHF),
+// without VAT: the Foundation is a Swiss association and not VAT registered. Configuration: private/data/btcpay.json {"url", "store_id", "api_key", "webhook_secret"};
 // the API key needs only btcpay.store.cancreateinvoice and btcpay.store.canviewinvoices (it cannot move funds).
 declare(strict_types=1);
 
 const GV_CURRENCY = 'CHF';
-const GV_PRICES = ['pro' => 7, 'enterprise' => 150];   // CHF per 30 days
-const GV_PRICES_YEAR = ['pro' => 60, 'enterprise' => 1440];   // CHF per year (365 days), launch price for the first year
+const GV_PRICES = ['pro' => 7, 'team' => 150];   // CHF per 30 days
+const GV_PRICES_YEAR = ['pro' => 84, 'team' => 1800];   // CHF per year (365 days) = 12 x the monthly price
 const GV_BILLING_FROM = 'billing@gravitverifier.space';
 
 function gv_btcpay(): ?array {
@@ -26,6 +26,12 @@ function gv_btcpay_call(array $c, string $method, string $path, ?array $body = n
     return $d;
 }
 
+/** Price in CHF for $months of $plan; 12 months = one year (365 days) at the annual price. */
+function gv_price(string $plan, int $months): int {
+    if (!isset(GV_PRICES[$plan]) || $months < 1 || $months > 12) { throw new InvalidArgumentException('plan must be pro or team, months 1 to 12'); }
+    return $months === 12 ? GV_PRICES_YEAR[$plan] : GV_PRICES[$plan] * $months;
+}
+
 function gv_payments_table(): void {
     $db = gv_db();
     $db->exec('CREATE TABLE IF NOT EXISTS payments (invoice_id TEXT PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id),
@@ -42,8 +48,7 @@ function gv_payments_table(): void {
 function gv_checkout(array $acct, string $plan, int $months): array {
     $c = gv_btcpay();
     if (!$c) { throw new DomainException('payments are not open yet'); }
-    if (!isset(GV_PRICES[$plan]) || $months < 1 || $months > 12) { throw new InvalidArgumentException('plan must be pro or enterprise, months 1 to 12'); }
-    $amount = $months === 12 ? GV_PRICES_YEAR[$plan] : GV_PRICES[$plan] * $months;   // 12 months = one year at the annual price
+    $amount = gv_price($plan, $months);
     $inv = gv_btcpay_call($c, 'POST', '/invoices', [
         'amount' => (string)$amount, 'currency' => GV_CURRENCY,
         'metadata' => ['orderId' => $acct['public_id'] . '-' . gmdate('YmdHis'), 'account' => $acct['public_id'], 'plan' => $plan,
@@ -65,38 +70,46 @@ function gv_webhook(string $raw, string $sigHeader): string {
     if (($ev['type'] ?? '') !== 'InvoiceSettled' || empty($ev['invoiceId'])) { return 'ignored'; }
     $inv = gv_btcpay_call($c, 'GET', '/invoices/' . rawurlencode($ev['invoiceId']));
     if (($inv['status'] ?? '') !== 'Settled') { return 'not settled'; }
+    return gv_settle($inv['id'], 'Bitcoin', fn(array $p) => (float)$inv['amount'] >= (float)$p['amount'] && ($inv['currency'] ?? '') === $p['currency']);
+}
+
+/** Extends the plan once per payment. $amountOk checks the payment row against what was really paid.
+ *  $method names the means of payment in the receipt mail. Returns a short status string. */
+function gv_settle(string $invoiceId, string $method, callable $amountOk): string {
     gv_payments_table();
     $db = gv_db();
     $db->beginTransaction();
     try {
         $st = $db->prepare('SELECT p.*, a.plan AS cur_plan, a.plan_until FROM payments p JOIN accounts a ON a.id = p.account_id
                             WHERE p.invoice_id = ? AND p.settled IS NULL');
-        $st->execute([$inv['id']]);
+        $st->execute([$invoiceId]);
         $p = $st->fetch();
         if (!$p) { $db->commit(); return 'already applied or unknown'; }
-        if ((float)$inv['amount'] < (float)$p['amount'] || ($inv['currency'] ?? '') !== $p['currency']) { throw new RuntimeException('amount mismatch'); }
+        if (!$amountOk($p)) { throw new RuntimeException('amount mismatch'); }
         $from = ($p['plan_until'] && $p['plan_until'] > gv_now() && $p['cur_plan'] === $p['plan']) ? strtotime($p['plan_until']) : time();
         $days = (int)$p['months'] === 12 ? 365 : 30 * (int)$p['months'];
         $until = gmdate('Y-m-d\TH:i:s\Z', $from + $days * 86400);
         $db->prepare('UPDATE accounts SET plan = ?, plan_until = ? WHERE id = ?')->execute([$p['plan'], $until, $p['account_id']]);
-        $db->prepare('UPDATE payments SET settled = ? WHERE invoice_id = ?')->execute([gv_now(), $inv['id']]);
+        $db->prepare('UPDATE payments SET settled = ? WHERE invoice_id = ?')->execute([gv_now(), $invoiceId]);
         $db->commit();
         $em = $db->prepare('SELECT email, public_id FROM accounts WHERE id = ?'); $em->execute([$p['account_id']]); $a = $em->fetch();
-        if ($a && filter_var($a['email'], FILTER_VALIDATE_EMAIL)) { gv_billing_mail($a['email'], $a['public_id'], $p, $until, $inv['id']); }
-        gv_billing_mail(GV_BILLING_FROM, $a['public_id'] ?? '?', $p, $until, $inv['id'], true);
+        if ($a && filter_var($a['email'], FILTER_VALIDATE_EMAIL)) { gv_billing_mail($a['email'], $a['public_id'], $p, $until, $invoiceId, false, $method); }
+        gv_billing_mail(GV_BILLING_FROM, $a['public_id'] ?? '?', $p, $until, $invoiceId, true, $method);
         return "applied until $until";
     } catch (Throwable $e) { $db->rollBack(); throw $e; }
 }
 
-function gv_billing_mail(string $to, string $account, array $p, string $until, string $invoice, bool $internal = false): void {
+function gv_billing_mail(string $to, string $account, array $p, string $until, string $invoice, bool $internal = false,
+                         string $method = 'Bitcoin'): void {
     $plan = ucfirst((string)$p['plan']); $months = (int)$p['months']; $day = substr($until, 0, 10);
     $price = ($p['currency'] ?? GV_CURRENCY) . ' ' . (int)$p['amount'];
     $term = $months === 12 ? '1 year' : "$months x 30 days";
     $subject = $internal ? "Payment settled: $plan, $price ($account)" : "Payment received: Gravit Verifier $plan until $day";
-    $body = $internal ? "Invoice $invoice settled. Account $account: $plan for $term, $price, valid until $until.\n" : <<<TXT
+    $refund = $method === 'Bitcoin' ? 'in Bitcoin to an address you give us' : 'in the same stablecoin, to the address you paid from';
+    $body = $internal ? "Invoice $invoice settled ($method). Account $account: $plan for $term, $price, valid until $until.\n" : <<<TXT
 Hello,
 
-thank you. Your payment of $price in Bitcoin has been confirmed.
+thank you. Your payment of $price in $method has been confirmed.
 
 Account: $account
 Plan: $plan, $term
@@ -106,7 +119,7 @@ Invoice: $invoice
 Your API key stays the same. Check your plan at any time with GET https://gravitverifier.space/api/v1/usage
 
 Money-back guarantee: if the plan is not right for you, reply to this email within 30 days of payment.
-We refund the full amount, in Bitcoin to an address you give us. No questions asked.
+We refund the full amount, $refund. No questions asked.
 
 No VAT is charged: the Gravit Open Network Foundation, a Swiss association, is not VAT registered. If you need an invoice
 document for your accounting, simply reply to this email.

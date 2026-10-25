@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 const GV_SERVICE = 'gravitverifier.space';
-const GV_PLANS = ['free' => 1000, 'pro' => 100000, 'enterprise' => 10000000];   // verifications per calendar month (UTC)
+const GV_PLANS = ['free' => 1000, 'pro' => 100000, 'team' => 1000000, 'enterprise' => 10000000];   // verifications per calendar month (UTC); enterprise by agreement
 const GV_MAX_BODY = 1048576;                                                   // 1 MiB
 
 function gv_dir(): string { return getenv('GV_PRIVATE') ?: __DIR__; }
-function gv_python(): string { return getenv('GV_PYTHON') ?: '/usr/local/bin/python3.12'; }
+function gv_python(): string {
+    if (getenv('GV_PYTHON')) { return getenv('GV_PYTHON'); }
+    foreach (['/opt/alt/python312/bin/python3', '/usr/local/bin/python3.12'] as $p) { if (is_executable($p)) { return $p; } }
+    return 'python3';
+}
 
 function gv_db(): PDO {
     static $db = null;
@@ -99,8 +103,11 @@ function gv_usage(array $acct): array {
 /** Run the Python worker on the raw request body (passed unchanged, so signed numbers keep their exact form).
  *  Returns [meta array, raw canonical result JSON] or throws. */
 function gv_run_worker(string $body): array {
+    $home = getenv('HOME') ?: (function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['dir'] ?? '/tmp') : '/tmp');
+    $env = ['PATH' => '/usr/local/bin:/usr/bin:/bin', 'HOME' => $home, 'PYTHONDONTWRITEBYTECODE' => '1'];
+    if (is_dir("$home/.local/lib/python3.12/site-packages")) { $env['PYTHONPATH'] = "$home/.local/lib/python3.12/site-packages"; }
     $p = proc_open([gv_python(), gv_dir() . '/worker.py'], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes,
-                   null, ['PATH' => '/usr/local/bin:/usr/bin:/bin', 'HOME' => getenv('HOME') ?: '/tmp', 'PYTHONDONTWRITEBYTECODE' => '1']);
+                   null, $env);
     if (!is_resource($p)) { throw new RuntimeException('worker could not start'); }
     fwrite($pipes[0], $body);
     fclose($pipes[0]);

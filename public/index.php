@@ -3,7 +3,9 @@
 // GET /api/v1/export, GET /api/v1/usage, GET /api/v1/service-key, GET /api/v1/status, GET /api/v1/openapi.json,
 // POST /api/v1/gate.
 declare(strict_types=1);
-require (getenv('GV_PRIVATE') ?: dirname(__DIR__, 3) . '/verifier-service') . '/lib.php';
+// The private directory sits in the account's home: two levels up on the current host, three on the former one.
+$gvPrivate = getenv('GV_PRIVATE') ?: (is_dir(dirname(__DIR__, 2) . '/verifier-service') ? dirname(__DIR__, 2) : dirname(__DIR__, 3)) . '/verifier-service';
+require $gvPrivate . '/lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -34,14 +36,18 @@ if ($path === '/v1/billing/webhook' && $method === 'POST') {
     catch (Throwable $e) { error_log('gravit webhook: ' . $e->getMessage()); err(400, 'webhook rejected'); }
 }
 if ($path === '/v1/plans' && $method === 'GET') {
-    require_once gv_dir() . '/billing.php';
+    require_once gv_dir() . '/stablecoin.php';
+    $sc = gv_sc_config();
     out(200, ['currency' => GV_CURRENCY, 'vat' => 'not charged: the Foundation, a Swiss association, is not VAT registered', 'period_days' => 30,
               'plans' => ['free' => ['price' => 0, 'calls_per_month' => GV_PLANS['free']],
                           'pro' => ['price' => GV_PRICES['pro'], 'price_year' => GV_PRICES_YEAR['pro'], 'calls_per_month' => GV_PLANS['pro']],
-                          'enterprise' => ['price' => GV_PRICES['enterprise'], 'price_year' => GV_PRICES_YEAR['enterprise'], 'calls_per_month' => GV_PLANS['enterprise']]],
-              'year' => 'months = 12 buys one year (365 days) at price_year, the launch price for the first year',
-              'money_back' => 'full refund within 30 days of payment, in Bitcoin, no questions asked',
-              'payment' => 'Bitcoin (on chain and Lightning) through BTCPay Server', 'open' => gv_btcpay() !== null]);
+                          'team' => ['price' => GV_PRICES['team'], 'price_year' => GV_PRICES_YEAR['team'], 'calls_per_month' => GV_PLANS['team']],
+                          'enterprise' => ['price' => 'by agreement', 'contact' => 'https://gravitverifier.space/contact/']],
+              'year' => 'months = 12 buys one year (365 days) at price_year',
+              'money_back' => 'full refund within 30 days of payment, in the currency paid, no questions asked',
+              'payment' => ['stablecoin' => ['open' => $sc !== null, 'options' => $sc ? gv_sc_options($sc) : [],
+                                             'pricing' => 'CHF price converted to USD at the ECB reference rate, rounded up to the cent'],
+                            'bitcoin' => ['open' => gv_btcpay() !== null, 'via' => 'BTCPay Server']]]);
 }
 if ($path === '/v1' || $path === '/') { out(200, ['service' => GV_SERVICE, 'api' => 'v1', 'docs' => 'https://gravitverifier.space/docs/']); }
 
@@ -106,12 +112,25 @@ if (preg_match('#^/v1/log/proof/([0-9a-f]{64})$#', $path, $m) && $method === 'GE
 }
 
 if ($path === '/v1/billing/checkout' && $method === 'POST') {
-    require_once gv_dir() . '/billing.php';
+    require_once gv_dir() . '/stablecoin.php';
     $b = json_decode((string)file_get_contents('php://input', false, null, 0, 4096), true) ?: [];
-    try { out(200, gv_checkout($acct, (string)($b['plan'] ?? 'pro'), (int)($b['months'] ?? 1))); }
+    try {
+        if (($b['method'] ?? 'bitcoin') === 'stablecoin') {
+            out(200, gv_sc_checkout($acct, (string)($b['plan'] ?? 'pro'), (int)($b['months'] ?? 1),
+                                    (string)($b['network'] ?? 'base'), (string)($b['token'] ?? 'USDC')));
+        }
+        out(200, gv_checkout($acct, (string)($b['plan'] ?? 'pro'), (int)($b['months'] ?? 1)));
+    }
     catch (DomainException $e) { err(503, $e->getMessage()); }
     catch (InvalidArgumentException $e) { err(400, $e->getMessage()); }
     catch (Throwable $e) { error_log('gravit checkout: ' . $e->getMessage()); err(502, 'the payment service did not answer; please try again'); }
+}
+
+if (preg_match('#^/v1/billing/orders/(sc_[0-9a-f]{24})$#', $path, $m) && $method === 'GET') {
+    require_once gv_dir() . '/stablecoin.php';
+    $o = gv_sc_order_doc($m[1], (int)$acct['id']);
+    if (!$o) { err(404, 'no order with this id in your account'); }
+    out(200, $o);
 }
 
 if ($path === '/v1/usage' && $method === 'GET') { out(200, gv_usage($acct)); }
