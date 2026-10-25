@@ -452,7 +452,7 @@
             "description": "payments not open yet"
           }
         },
-        "description": "Body: {\"plan\": \"pro\"|\"team\", \"months\": 1..12, \"method\": \"stablecoin\"|\"bitcoin\", \"network\": \"ethereum\"|\"base\", \"token\": \"USDC\"|\"USDT\"}. A stablecoin order returns the exact amount and address to pay; send exactly that amount in one transfer. The plan starts after the confirmations named in the order."
+        "description": "Body: {\"plan\": \"pro\"|\"enterprise\", \"months\": 1..12, \"method\": \"stablecoin\"|\"bitcoin\", \"network\": \"ethereum\"|\"base\", \"token\": \"USDC\"|\"USDT\"}. A stablecoin order returns the exact amount and address to pay; send exactly that amount in one transfer. The plan starts after the confirmations named in the order."
       }
     },
     "/v1/billing/webhook": {
