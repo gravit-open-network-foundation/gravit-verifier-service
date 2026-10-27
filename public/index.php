@@ -38,6 +38,7 @@ if ($path === '/v1/billing/webhook' && $method === 'POST') {
 if ($path === '/v1/plans' && $method === 'GET') {
     require_once gv_dir() . '/stablecoin.php';
     $sc = gv_sc_config();
+    require_once gv_dir() . '/ton.php';
     out(200, ['currency' => GV_CURRENCY, 'vat' => 'not charged: the Foundation, a Swiss association, is not VAT registered', 'period_days' => 30,
               'plans' => ['free' => ['price' => 0, 'calls_per_month' => GV_PLANS['free']],
                           'pro' => ['price' => GV_PRICES['pro'], 'price_year' => GV_PRICES_YEAR['pro'], 'calls_per_month' => GV_PLANS['pro']],
@@ -47,6 +48,8 @@ if ($path === '/v1/plans' && $method === 'GET') {
               'money_back' => 'full refund within 30 days of payment, in the currency paid, no questions asked',
               'payment' => ['stablecoin' => ['open' => $sc !== null, 'options' => $sc ? gv_sc_options($sc) : [],
                                              'pricing' => 'CHF price converted to USD at the ECB reference rate, rounded up to the cent'],
+                            'ton' => ['open' => gv_ton_config() !== null,
+                                      'pricing' => 'CHF price converted at the current TON/CHF rate, fixed for ' . GV_TON_ORDER_HOURS . ' hours'],
                             'bitcoin' => ['open' => gv_btcpay() !== null, 'via' => 'BTCPay Server']]]);
 }
 if ($path === '/v1' || $path === '/') { out(200, ['service' => GV_SERVICE, 'api' => 'v1', 'docs' => 'https://gravitverifier.space/docs/']); }
@@ -115,6 +118,10 @@ if ($path === '/v1/billing/checkout' && $method === 'POST') {
     require_once gv_dir() . '/stablecoin.php';
     $b = json_decode((string)file_get_contents('php://input', false, null, 0, 4096), true) ?: [];
     try {
+        if (($b['method'] ?? 'bitcoin') === 'ton') {
+            require_once gv_dir() . '/ton.php';
+            out(200, gv_ton_checkout($acct, (string)($b['plan'] ?? 'pro'), (int)($b['months'] ?? 1)));
+        }
         if (($b['method'] ?? 'bitcoin') === 'stablecoin') {
             out(200, gv_sc_checkout($acct, (string)($b['plan'] ?? 'pro'), (int)($b['months'] ?? 1),
                                     (string)($b['network'] ?? 'base'), (string)($b['token'] ?? 'USDC')));
@@ -129,6 +136,13 @@ if ($path === '/v1/billing/checkout' && $method === 'POST') {
 if (preg_match('#^/v1/billing/orders/(sc_[0-9a-f]{24})$#', $path, $m) && $method === 'GET') {
     require_once gv_dir() . '/stablecoin.php';
     $o = gv_sc_order_doc($m[1], (int)$acct['id']);
+    if (!$o) { err(404, 'no order with this id in your account'); }
+    out(200, $o);
+}
+
+if (preg_match('#^/v1/billing/orders/(ton_[0-9a-f]{24})$#', $path, $m) && $method === 'GET') {
+    require_once gv_dir() . '/ton.php';
+    $o = gv_ton_order_doc($m[1], (int)$acct['id']);
     if (!$o) { err(404, 'no order with this id in your account'); }
     out(200, $o);
 }
