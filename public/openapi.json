@@ -417,7 +417,7 @@
     },
     "/v1/billing/checkout": {
       "post": {
-        "summary": "Create a payment for a paid plan: stablecoin order (USDC/USDT), TON order or Bitcoin invoice (BTCPay)",
+        "summary": "Create a payment for a paid plan: stablecoin order (USDC/USDT, CHFAU/EURAU when open), TON order or Bitcoin invoice (BTCPay)",
         "requestBody": {
           "content": {
             "application/json": {
@@ -452,7 +452,7 @@
             "description": "payments not open yet"
           }
         },
-        "description": "Body: {\"plan\": \"pro\"|\"enterprise\", \"months\": 1..12, \"method\": \"stablecoin\"|\"ton\"|\"bitcoin\", \"network\": \"ethereum\"|\"base\", \"token\": \"USDC\"|\"USDT\"}. A stablecoin or TON order returns the exact amount and address to pay (TON: rate fixed for 2 hours); send exactly that amount in one transfer. The plan starts after the confirmations named in the order."
+        "description": "Body: {\"plan\": \"pro\"|\"enterprise\", \"months\": 1..12, \"method\": \"stablecoin\"|\"ton\"|\"bitcoin\", \"network\": \"ethereum\"|\"base\", \"token\": \"USDC\"|\"USDT\"|\"CHFAU\"|\"EURAU\"}; GET /v1/plans lists the options open now. A stablecoin or TON order returns the exact amount and address to pay (TON: rate fixed for 2 hours); send exactly that amount in one transfer. The plan starts after the confirmations named in the order."
       }
     },
     "/v1/billing/webhook": {

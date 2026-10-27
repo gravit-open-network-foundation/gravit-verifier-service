@@ -1,9 +1,11 @@
 <?php
-// Payments in stablecoins (USDC, USDT) straight to the Foundation's own address. Nothing here can move funds:
+// Payments in stablecoins (USDC, USDT, CHFAU, EURAU) straight to the Foundation's own address. Nothing here can move funds:
 // the service only reads public blockchain logs. Configuration: private/data/stablecoin.json
-// {"address": "0x...", "networks": ["ethereum", "base"]}. Without it, stablecoin checkout stays closed.
+// {"address": "0x...", "networks": ["ethereum", "base"], "tokens": ["USDC", "USDT", "CHFAU", "EURAU"]}. Without it,
+// stablecoin checkout stays closed; without "tokens", only USDC and USDT are offered.
 //
-// Each order gets a unique amount (the CHF price converted to USD at the ECB rate, rounded up to the cent, plus
+// Each order gets a unique amount (the CHF price converted to the token's currency at the ECB rate, rounded up to the
+// cent, plus
 // a few millionths), so an incoming transfer is matched to its order by network, token and exact amount.
 // stablecoin_watch.php (cron) scans the Transfer logs and settles matched orders through gv_settle().
 declare(strict_types=1);
@@ -13,15 +15,23 @@ require_once __DIR__ . '/billing.php';
 const GV_SC_NETWORKS = [
     'ethereum' => ['chain_id' => 1, 'rpc' => 'https://ethereum-rpc.publicnode.com', 'confirmations' => 12,
                    'tokens' => ['USDC' => '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-                                'USDT' => '0xdac17f958d2ee523a2206206994597c13d831ec7']],
+                                'USDT' => '0xdac17f958d2ee523a2206206994597c13d831ec7',
+                                'CHFAU' => '0xbd4dfc058eb95b8de5ceaf39966a1a70f5556f78',
+                                'EURAU' => '0x4933a85b5b5466fbaf179f72d3de273c287ec2c2']],
     'base'     => ['chain_id' => 8453, 'rpc' => 'https://base-rpc.publicnode.com', 'confirmations' => 30,
-                   'tokens' => ['USDC' => '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913']],
+                   'tokens' => ['USDC' => '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+                                'CHFAU' => '0xbd4dfc058eb95b8de5ceaf39966a1a70f5556f78',
+                                'EURAU' => '0x4933a85b5b5466fbaf179f72d3de273c287ec2c2']],
 ];
-const GV_SC_DECIMALS = 6;                 // USDC and USDT on these networks
+// CHFAU and EURAU: AllUnity GmbH, addresses as published on allunity.com/chfau and allunity.com/eurau, checked on chain
+// (symbol, 6 decimals) on 27 Oct 2026.
+const GV_SC_TOKEN_CCY = ['USDC' => 'USD', 'USDT' => 'USD', 'CHFAU' => 'CHF', 'EURAU' => 'EUR'];
+const GV_SC_DEFAULT_TOKENS = ['USDC', 'USDT'];
+const GV_SC_DECIMALS = 6;                 // every token above, on these networks
 const GV_SC_ORDER_HOURS = 24;             // shown to the customer
 const GV_SC_MATCH_DAYS = 7;               // a late transfer is still matched within this window
 const GV_SC_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
-const GV_SC_FX_URL = 'https://api.frankfurter.dev/v1/latest?base=CHF&symbols=USD';   // ECB reference rates
+const GV_SC_FX_URL = 'https://api.frankfurter.dev/v1/latest?base=CHF&symbols=USD,EUR';   // ECB reference rates
 
 function gv_sc_config(): ?array {
     $f = gv_dir() . '/data/stablecoin.json';
@@ -29,6 +39,7 @@ function gv_sc_config(): ?array {
     if (!is_array($c) || !preg_match('/^0x[0-9a-fA-F]{40}$/', (string)($c['address'] ?? ''))) { return null; }
     $c['address'] = strtolower($c['address']);
     $c['networks'] = array_values(array_intersect($c['networks'] ?? array_keys(GV_SC_NETWORKS), array_keys(GV_SC_NETWORKS)));
+    $c['tokens'] = array_values(array_intersect($c['tokens'] ?? GV_SC_DEFAULT_TOKENS, array_keys(GV_SC_TOKEN_CCY)));
     return $c['networks'] ? $c : null;
 }
 
@@ -53,22 +64,28 @@ function gv_sc_rpc(string $network, string $method, array $params) {
 
 function gv_sc_block(string $network): int { return (int)hexdec(substr((string)gv_sc_rpc($network, 'eth_blockNumber', []), 2)); }
 
-/** USD per CHF from the ECB reference rate, cached for 6 hours. */
-function gv_sc_rate(): string {
+/** Units of $ccy per CHF from the ECB reference rate, cached for 6 hours. */
+function gv_sc_rate(string $ccy = 'USD'): string {
+    if ($ccy === 'CHF') { return '1'; }
     $f = gv_dir() . '/data/fx.json';
     $c = file_exists($f) ? json_decode((string)file_get_contents($f), true) : null;
-    if (is_array($c) && ($c['fetched'] ?? 0) > time() - 6 * 3600) { return $c['usd_per_chf']; }
+    if (!isset($c['rates'][$ccy])) { $c = null; }   // older cache without this currency
+    if (is_array($c) && ($c['fetched'] ?? 0) > time() - 6 * 3600) { return $c['rates'][$ccy]; }
     $ch = curl_init(GV_SC_FX_URL);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_FOLLOWLOCATION => true]);
     $d = json_decode((string)curl_exec($ch), true); curl_close($ch);
-    $rate = $d['rates']['USD'] ?? null;
-    if (!is_numeric($rate) || $rate < 0.5 || $rate > 3) {
-        if (is_array($c)) { return $c['usd_per_chf']; }   // a stale rate is better than no checkout
-        throw new RuntimeException('no exchange rate');
+    $rates = [];
+    foreach (['USD', 'EUR'] as $k) {
+        $r = $d['rates'][$k] ?? null;
+        if (!is_numeric($r) || $r < 0.5 || $r > 3) {
+            if (is_array($c)) { return $c['rates'][$ccy]; }   // a stale rate is better than no checkout
+            throw new RuntimeException('no exchange rate');
+        }
+        $rates[$k] = (string)$r;
     }
-    $c = ['usd_per_chf' => (string)$rate, 'date' => $d['date'] ?? '', 'fetched' => time()];
+    $c = ['rates' => $rates, 'date' => $d['date'] ?? '', 'fetched' => time()];
     file_put_contents($f, json_encode($c), LOCK_EX);
-    return $c['usd_per_chf'];
+    return $c['rates'][$ccy];
 }
 
 function gv_sc_format(int $units): string {
@@ -79,11 +96,12 @@ function gv_sc_format(int $units): string {
 function gv_sc_checkout(array $acct, string $plan, int $months, string $network, string $token): array {
     $c = gv_sc_config();
     if (!$c) { throw new DomainException('stablecoin payments are not open yet'); }
-    if (!in_array($network, $c['networks'], true) || !isset(GV_SC_NETWORKS[$network]['tokens'][$token])) {
+    if (!in_array($network, $c['networks'], true) || !in_array($token, $c['tokens'], true)
+        || !isset(GV_SC_NETWORKS[$network]['tokens'][$token])) {
         throw new InvalidArgumentException('network/token must be one of: ' . implode(', ', gv_sc_options($c)));
     }
     $chf = gv_price($plan, $months);
-    $rate = gv_sc_rate();
+    $rate = gv_sc_rate(GV_SC_TOKEN_CCY[$token]);
     $cents = (int)ceil(round($chf * (float)$rate * 100, 6));
     gv_sc_tables();
     $db = gv_db();
@@ -109,7 +127,9 @@ function gv_sc_checkout(array $acct, string $plan, int $months, string $network,
 
 function gv_sc_options(array $c): array {
     $o = [];
-    foreach ($c['networks'] as $n) { foreach (array_keys(GV_SC_NETWORKS[$n]['tokens']) as $t) { $o[] = "$n/$t"; } }
+    foreach ($c['networks'] as $n) {
+        foreach (array_keys(GV_SC_NETWORKS[$n]['tokens']) as $t) { if (in_array($t, $c['tokens'], true)) { $o[] = "$n/$t"; } }
+    }
     return $o;
 }
 
@@ -124,7 +144,9 @@ function gv_sc_order_doc(string $id, int $accountId): ?array {
     $c = gv_sc_config();
     $net = GV_SC_NETWORKS[$o['network']];
     return ['order_id' => $o['order_id'], 'plan' => $o['plan'], 'months' => (int)$o['months'],
-            'price' => ['amount' => (int)$o['chf'], 'currency' => GV_CURRENCY, 'usd_per_chf' => $o['usd_per_chf']],
+            'price' => ['amount' => (int)$o['chf'], 'currency' => GV_CURRENCY]
+                       + (GV_SC_TOKEN_CCY[$o['token']] === 'USD' ? ['usd_per_chf' => $o['usd_per_chf']] : [])
+                       + ['rate' => ['currency' => GV_SC_TOKEN_CCY[$o['token']], 'per_chf' => $o['usd_per_chf']]],
             'pay' => ['network' => $o['network'], 'chain_id' => $net['chain_id'], 'token' => $o['token'],
                       'token_contract' => $net['tokens'][$o['token']], 'to' => $c['address'] ?? null,
                       'amount' => gv_sc_format((int)$o['amount_units']), 'amount_units' => (int)$o['amount_units']],
@@ -156,6 +178,7 @@ function gv_sc_watch(): array {
         for ($a = $start; $a <= $safe; $a += 2000) {
             $b = min($safe, $a + 1999);
             foreach (GV_SC_NETWORKS[$network]['tokens'] as $token => $contract) {
+                if (!in_array($token, $c['tokens'], true)) { continue; }
                 $logs = gv_sc_rpc($network, 'eth_getLogs', [['fromBlock' => '0x' . dechex($a), 'toBlock' => '0x' . dechex($b),
                     'address' => $contract, 'topics' => [GV_SC_TRANSFER_TOPIC, null, $to]]]);
                 foreach ($logs as $l) {
